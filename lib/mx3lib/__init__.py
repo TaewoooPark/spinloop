@@ -17,5 +17,13 @@ from .outdir import OutputDir, Provenance
 from .table import Table
 from . import observe, physics, run
 
-__all__ = ["OutputDir", "Provenance", "Table", "observe", "physics", "run"]
+# ovf/view need numpy and matplotlib; imported lazily so the rest of the
+# package keeps working on a bare Python.
+try:
+    from . import ovf, view
+except ImportError:  # pragma: no cover
+    ovf = view = None
+
+__all__ = ["OutputDir", "Provenance", "Table", "observe", "physics", "run",
+           "ovf", "view"]
 __version__ = "0.1.0"

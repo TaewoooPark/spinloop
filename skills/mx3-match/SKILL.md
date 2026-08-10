@@ -149,3 +149,5 @@ The same logic holds for other measurements, without a dedicated script yet:
 - **mx3-run** — extract the simulated loop metrics
 - **mx3-tune** — search the remaining unknown parameter
 - **mx3-check** — confirm the match is not a mesh artefact
+- **mx3-lab** — simulate the measurement protocol itself, not just its result
+- **mx3-view** — a `kerr` render to put beside the measured image

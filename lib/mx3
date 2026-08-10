@@ -7,7 +7,7 @@ everywhere. Run `mx3 <command> -h` for details.
     mx3 summary   DIR...          what is in this output directory
     mx3 table     DIR [--csv F]   the time series
     mx3 plot      DIR --y mz      quick plot (needs matplotlib)
-    mx3 image     DIR [--all]     snapshots as PNG, via mumax3-convert
+    mx3 view      DIR             picture of the magnetisation\n    mx3 movie     DIR             animate the snapshots\n    mx3 profile   DIR --along x   line cut through the field\n    mx3 export    DIR             snapshots to .npy\n    mx3 image     DIR [--all]     PNG via mumax3-convert (if installed)
     mx3 loop      DIR             coercivity, remanence, squareness
     mx3 velocity  DIR --pos ext_dwpos
     mx3 settled   DIR --y mz      did it stop changing
@@ -170,6 +170,73 @@ def cmd_image(args) -> int:
             return 1
     for m in made:
         print(m)
+    return 0
+
+
+def _fields(args):
+    from mx3lib import ovf
+    out = _dirs(args)[0]
+    snaps = out.ovfs
+    if not snaps:
+        print("no .ovf snapshots here - the script never called Save()/AutoSave()",
+              file=sys.stderr)
+        sys.exit(1)
+    if args.which == "all":
+        return out, snaps
+    if args.which == "first":
+        return out, [snaps[0]]
+    if args.which == "last":
+        return out, [snaps[-1]]
+    return out, [snaps[int(args.which)]]
+
+
+def cmd_view(args) -> int:
+    from mx3lib import ovf, view
+    out, snaps = _fields(args)
+    made = []
+    for s in snaps:
+        f = ovf.read(s)
+        dest = Path(args.out) if (args.out and len(snaps) == 1) else \
+            (Path(args.out) if args.out else out.path) / (Path(s).stem + f"_{args.mode}.png")
+        made.append(view.render(f, dest, mode=args.mode, comp=args.comp,
+                                z=args.z, arrows=args.arrows))
+    for m in made:
+        print(m)
+    return 0
+
+
+def cmd_movie(args) -> int:
+    from mx3lib import view
+    out, snaps = _fields(args)
+    if len(snaps) < 2:
+        print(f"only {len(snaps)} snapshot(s); a movie needs several. Record them "
+              f"with AutoSave(m, period).", file=sys.stderr)
+        return 1
+    dest = Path(args.out) if args.out else out.path / "movie.mp4"
+    print(view.movie(snaps, dest, mode=args.mode, comp=args.comp, z=args.z,
+                     fps=args.fps))
+    return 0
+
+
+def cmd_profile(args) -> int:
+    from mx3lib import ovf, view
+    out, snaps = _fields(args)
+    f = ovf.read(snaps[-1])
+    dest = Path(args.out) if args.out else out.path / "profile.png"
+    print(view.profile(f, dest, along=args.along, z=args.z, row=args.row))
+    return 0
+
+
+def cmd_export(args) -> int:
+    from mx3lib import ovf
+    import numpy as np
+    out, snaps = _fields(args)
+    for s in snaps:
+        f = ovf.read(s)
+        dest = (Path(args.out) if args.out else out.path) / (Path(s).stem + ".npy")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        np.save(dest, f.data)
+        print(f"{dest}   shape {f.data.shape} (z, y, x, comp)")
     return 0
 
 
@@ -337,6 +404,33 @@ def main() -> int:
     s.add_argument("--arrows", type=int, default=0, help="overlay arrows of this size")
     s.add_argument("--out", help="destination directory")
     s.set_defaults(fn=cmd_image)
+
+    def field_args(p):
+        p.add_argument("--which", default="last",
+                       help="last (default), first, all, or an index")
+        p.add_argument("--z", type=int, default=0, help="layer index")
+        p.add_argument("--out")
+        return p
+
+    s = field_args(with_dirs(sub.add_parser("view", help="picture of the magnetisation")))
+    s.add_argument("--mode", default="component", choices=["component", "angle", "kerr"])
+    s.add_argument("--comp", default="z")
+    s.add_argument("--arrows", type=int, default=0, help="overlay ~N arrows across")
+    s.set_defaults(fn=cmd_view)
+
+    s = field_args(with_dirs(sub.add_parser("movie", help="animate the snapshots")))
+    s.add_argument("--mode", default="component", choices=["component", "angle", "kerr"])
+    s.add_argument("--comp", default="z")
+    s.add_argument("--fps", type=int, default=12)
+    s.set_defaults(which="all", fn=cmd_movie)
+
+    s = field_args(with_dirs(sub.add_parser("profile", help="line cut through the field")))
+    s.add_argument("--along", default="x", choices=["x", "y"])
+    s.add_argument("--row", type=int)
+    s.set_defaults(fn=cmd_profile)
+
+    s = field_args(with_dirs(sub.add_parser("export", help="snapshots to .npy")))
+    s.set_defaults(fn=cmd_export)
 
     s = with_dirs(sub.add_parser("loop", help="hysteresis metrics"))
     s.add_argument("--field", default="B_extx", help="swept field column")

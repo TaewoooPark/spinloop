@@ -145,3 +145,5 @@ A run completing is not evidence that the result is right.
 - **mx3-tune** — vary a parameter until a target is met
 - **mx3-check** — is the mesh fine enough to trust this
 - **mx3-match** — compare against measured data
+- **mx3-view** — a picture of the magnetisation behind the numbers
+- **mx3-log** — record what this run settled

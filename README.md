@@ -11,7 +11,7 @@ can ask for. You can iterate inside a conversation.
 
 ## What it does
 
-Six skills. Each one is a thing you would actually say out loud.
+Ten skills. Each one is a thing you would actually say out loud.
 
 | Skill | You say | It does |
 |---|---|---|
@@ -21,6 +21,10 @@ Six skills. Each one is a thing you would actually say out loud.
 | **mx3-check** | "can I trust this?" | Refines the mesh until the answer stops changing, and cross-checks against closed-form micromagnetics. Answers the reviewer question about convergence. |
 | **mx3-match** | "match my measurement" | Compares a measured VSM/MOKE/AHE loop against simulation and finds the parameters that reproduce it — while being explicit about which features actually constrain what. |
 | **mx3-paper** | "run it like this paper" | Turns a methods section into a runnable script, listing exactly which parameters the paper stated and which had to be assumed. Also writes your own methods paragraph. |
+| **mx3-view** | "show me what it looks like" | Domain images, skyrmion colour maps, MOKE-style renders, wall profiles and movies. Reads `.ovf` directly, so it needs no extra tools. |
+| **mx3-plan** | "what should I even simulate?" | From your material parameters: which states it can support, where the boundaries are, what mesh you need, what it will cost. Instant — nothing is simulated. |
+| **mx3-lab** | "simulate our VSM measurement" | Builds the field sequence a real instrument applies: major and minor loops, switching field vs angle, FMR ringdown. |
+| **mx3-log** | "what did I run last time?" | A lab notebook reconstructed from the output directories themselves — what ran, what it settled, what is still open. |
 
 ### Two things it will not do
 

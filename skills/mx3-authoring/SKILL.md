@@ -154,6 +154,9 @@ This skill writes the script. Hand off from here:
 | "can I trust this result" | **mx3-check** — needs `N`/`dx` declared separately |
 | "match my measurement" | **mx3-match** |
 | "run it like this paper" | **mx3-paper** |
+| "show me what it looks like" | **mx3-view** |
+| "what should I even simulate?" | **mx3-plan** — run this *before* writing |
+| "simulate our VSM/MOKE measurement" | **mx3-lab** |
 
 Two conventions make the handoff work, so apply them by default when the
 script is likely to be swept or refined:

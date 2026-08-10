@@ -139,3 +139,5 @@ Mesh is the usual culprit but not the only one:
 - **mx3-run** — inspect a single result
 - **mx3-tune** — the search whose answer this validates
 - **mx3-authoring** — `pitfalls.md` catalogues the errors that survive `-vet`
+- **mx3-view** — look at the texture before trusting a number taken from it
+- **mx3-plan** — the same closed forms, used before the run instead of after
