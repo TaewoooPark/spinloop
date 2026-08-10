@@ -1,0 +1,46 @@
+/*
+  Reproduction: 1D edge tilting with interfacial DMI.
+  Cortes-Ortuno et al., arXiv:1803.11174, Table I and Fig. 1a.
+
+  Units      : SI throughout (m, A/m, J/m, J/m2, J/m3)
+  Mesh       : 800x1x1 cells of 0.125 nm  (the paper states 1 nm on p.4; refined
+               here to show the answer is converged, see mx3-check)
+  Materials  : Aex 13e-12, Dind 3e-3, Msat 0.86e6, Ku1 0.4e6  -- ALL STATED, p.3
+  Assumed    : alpha = 1        (not stated; static problem, damping only sets
+                                 how fast Relax() converges, not the answer)
+               m = Uniform(0,0,1) (not stated; along the stated easy axis)
+  Numerics   : EnableDemag = false -- the paper states it excludes the
+                 demagnetising field (p.7) and its Eq. 5 has no magnetostatic term
+               OpenBC = true -- the paper's boundary condition (Eq. 11,
+                 dTheta/dx = 1/xi) is the free-spin condition. mumax3's default
+                 closed boundary gives 28 deg instead of 41 deg. This is a
+                 model-matching choice, NOT a fit.
+  Outputs    : edge cell and centre cell, for the analytic comparison
+  Unverified : that alpha and the initial state reach the same minimum the
+               paper's shooting method found. Both edges are assumed decoupled
+               (100 nm wire vs 5.7 nm decay length).
+*/
+
+SetGridSize(800, 1, 1)
+SetCellSize(0.125e-9, 0.125e-9, 0.125e-9)
+
+Msat  = 0.86e6
+Aex   = 13e-12
+Ku1   = 0.4e6
+anisU = vector(0, 0, 1)
+Dind  = 3e-3
+alpha = 1
+
+EnableDemag = false
+OpenBC      = true
+
+m = Uniform(0, 0, 1)
+
+// Crop to a single cell so its value lands in table.txt. Note this reports the
+// cell CENTRE, half a cell in from the physical edge -- worth 0.1 deg here.
+TableAdd(Crop(m, 0, 1, 0, 1, 0, 1))
+TableAdd(Crop(m, 400, 401, 0, 1, 0, 1))
+
+Relax()
+TableSave()
+Save(m)

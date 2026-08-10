@@ -1,137 +1,164 @@
 ---
 name: mx3-paper
 description: >-
-  Turn a paper's methods section into a runnable mumax3 script, listing exactly
-  which parameters the paper states and which had to be assumed. Also works in
-  reverse: write the methods paragraph and provenance record for your own
-  simulation so someone else can reproduce it. Use for "run it like this
-  paper", "reproduce this paper's conditions", "set up the simulation from this
-  paper", "write the methods section", "what parameters did they use".
+  Reproduce a paper's micromagnetic simulation from its PDF. Extracts material
+  parameters with the page each came from, marks what the paper never stated,
+  builds a runnable script, runs it, and checks the result against targets taken
+  from the paper - refusing to reach agreement by adjusting any value the paper
+  actually printed. Also works in reverse: writes the methods paragraph and
+  provenance record for your own simulation. Use for "run it like this paper",
+  "reproduce this paper's conditions", "reproduce Figure 3", "set up the
+  simulation from this PDF", "what parameters did they use", "why doesn't my
+  result match the paper", "write the methods section".
 ---
 
-# From a paper to a script, and back
+# Reproducing a paper
 
-Two directions, same discipline: **never let an assumed number look like a
-reported one.**
+The failure mode this skill exists to prevent: you assume a cell size nobody
+wrote down, the simulation runs, the answer disagrees, and you spend a week on
+physics when the problem was an assumption.
 
----
+So every number carries a label - **stated** or **assumed** - from the first
+step to the final report, and nothing the paper printed is ever adjusted to
+improve agreement.
 
-## Direction 1 — reproducing a paper
+Read `references/reproduction-protocol.md` before starting. It is the rulebook.
 
-Papers underspecify simulations. Almost every methods section omits something
-the run needs, and the failure mode is silent: you assume a value, the
-simulation runs, the answer disagrees, and you spend a week on physics when
-the problem was a cell size nobody wrote down.
+## 1. Harvest
 
-### Extract before writing anything
-
-Work through this list and mark each item **stated** or **assumed**:
-
-| | Usually stated | Usually missing |
-|---|---|---|
-| Ms, Aex | ✓ | |
-| Ku1 / anisotropy axis | ✓ when relevant | easy axis direction |
-| DMI (Dind/Dbulk) | ✓ when relevant | bulk vs interfacial |
-| Sample dimensions | ✓ | |
-| **Cell size** | sometimes | **often missing** |
-| **Damping α** | sometimes | **often missing** |
-| Solver / tolerance | rarely | almost always |
-| Initial state | rarely | almost always |
-| Temperature | if finite | assumed 0 |
-| PBC | rarely | almost always |
-| Field/current protocol | ✓ | ramp rate, settle criterion |
-
-Cell size, damping and initial state are the three that most often decide
-whether you reproduce a result. If the paper gives dimensions and a grid, the
-cell size follows — do that arithmetic rather than guessing.
-
-### Fill gaps by rule, and record the rule
-
-| Missing | Reasonable default | Say |
-|---|---|---|
-| cell size | ≤ exchange length; `mx3 physics --Ms … --A …` | "assumed, paper did not state" |
-| α (dynamics) | 0.01–0.02 | "assumed; results are α-sensitive" |
-| α (static loop) | 1 | "relaxation only, α is numerical here" |
-| initial state | `Uniform` along the easy axis | "assumed; a different start may give a different minimum" |
-| solver | 5 (Dormand-Prince) | "assumed" |
-| temperature | 0 | "assumed; paper reports no thermal effects" |
-
-### Write it with the assumptions in the header
-
-Hand off to **mx3-authoring**, and require every assumed value to appear on
-the `Unverified` line:
-
-```go
-/*
-  Reproduction of Fig. 3(a), Author et al., J. Appl. Phys. 123, 456 (2024)
-  Units      : SI throughout
-  Mesh       : 256x256x1 of 2x2x1 nm  (paper gives 512x512 nm; cell ASSUMED)
-  Materials  : Ms 580e3 (stated), Aex 15e-12 (stated), Dind 3e-3 (stated),
-               Ku1 0.8e6 (stated), alpha 0.3 (ASSUMED - not given)
-  Outputs    : topological charge and m every 100 ps
-  Unverified : cell size, damping, initial state and solver are all assumed;
-               the paper states none of them. Disagreement with Fig. 3(a) is
-               as likely to come from these as from the physics.
-*/
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/mx3-paper/scripts/extract_paper.py paper.pdf \
+        --json spec.json
 ```
 
-### Then check before concluding anything
+Finds every unit-bearing quantity, converts it to SI, and reports it with its
+page and the sentence around it. It deliberately does **not** choose: a paper
+routinely contains several parameter sets (its own sample, a cited comparison,
+a second geometry), and picking between them needs the context.
 
-If the reproduction disagrees, the assumed parameters are the first suspects,
-not the last. Run **mx3-check** for mesh convergence, and **mx3-tune** over the
-assumed damping, before deciding the paper is wrong.
+It also reports what is missing. Cell size, damping and initial state are the
+three omissions that most often decide whether a reproduction works.
 
-### Honest failure
+Then **read the pages it points at** before trusting anything. Use `Read` on the
+PDF for the methods section and the caption of the figure you are targeting.
 
-Some papers cannot be reproduced from what they print. Saying "the methods
-section does not determine the simulation; here is what I assumed and here is
-how sensitive the answer is to each assumption" is a complete and useful
-answer. Do not manufacture agreement by tuning assumed values until the figure
-matches.
+## 2. Complete the spec
 
----
+Fill in `spec.json` by hand from the paper (format in the protocol reference):
 
-## Direction 2 — writing your own methods
+- `stated` - value, how it was printed, and the **page**. Auditable in one step.
+- `assumed` - value and *why*. Defaults below.
+- `numerics` - cell size, `OpenBC`, `EnableDemag`, solver, each with the
+  sentence in the paper that justifies it.
+- `targets` - what "reproduced" means, quantitatively.
 
-Everything needed is already in the output directory. `log.txt` holds the
-version banner and the script exactly as executed:
+### Defaults for what papers omit
+
+| Missing | Use | Record as |
+|---|---|---|
+| cell size | <= exchange length (`mx3 physics`) | assumed |
+| alpha, dynamics | 0.01-0.02 | assumed; results are alpha-sensitive |
+| alpha, static loop | 1 | assumed; numerical only, does not move the minimum |
+| initial state | `Uniform` along the easy axis | assumed; another start may find another minimum |
+| solver | 5 (Dormand-Prince) | assumed |
+| temperature | 0 | assumed |
+
+### Targets, strongest first
+
+`analytic` (a closed form the paper derives) -> `stated` (a number in the text)
+-> `digitised` (points read off a figure) -> `qualitative`.
+
+**Prefer the analytic target even when a figure is what you were asked to
+reproduce.** If the paper derives the curve it plots, matching the derivation is
+matching the figure - checkable to three digits instead of by eye.
+
+## 3. Build and run
+
+Hand the spec to **mx3-authoring**, which enforces the header: every assumed
+value must appear on the `Unverified` line. Then **mx3-run**.
+
+To target a single cell rather than a sample average:
+
+```go
+TableAdd(Crop(m, 0, 1, 0, 1, 0, 1))   // -> m_xrange0_x/y/z in table.txt
+```
+
+This reports the cell *centre*, half a cell inside the boundary - a real offset
+for edge quantities on a coarse mesh.
+
+## 4. Verify
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/mx3-paper/scripts/verify_repro.py \
+        spec.json sim.out
+```
+
+PASS/FAIL per target with the size of the gap. A target that could not be
+measured is reported as unchecked, never as a pass.
+
+When something misses it prints what you may change, in order. Follow that
+order - the first two categories have nothing to do with the paper's physics:
+
+1. **Numerics.** Mesh converged (`mx3-check`)? Boundary conditions? Demag
+   matching the paper's model? These look exactly like physics disagreements.
+2. **Assumed parameters.** Vary one at a time with **mx3-tune**.
+3. **The model.** Something the paper simulates that you have not built.
+4. **Stated values** - not to change them, but to report what would be required.
+
+## The rule
+
+**Never adjust a stated value to reach agreement.** If the figure only
+reproduces with a different Ms than the paper reports, that *is* the result:
+report the required value and the discrepancy.
+
+Equally, never reach for a fudge with no physical meaning - a scale factor on
+the output, a tolerance widened until it passes, a target quietly dropped. Every
+change must be a physical or numerical choice you can name and justify from the
+paper's own text.
+
+## Worked example: when it disagrees
+
+`assets/worked-example/` reproduces the 1D edge-tilting problem of
+arXiv:1803.11174. Read it for the middle of the story.
+
+Every stated parameter was correct, and the first run gave a 28 deg edge tilt
+against the analytic 41 deg. What followed:
+
+- refined the mesh 8x - converged to 28.8 deg, so **not** discretisation
+- doubled the DMI - saturated at 0.80, so **not** a unit convention
+- found `OpenBC`, a mumax3 setting the paper never mentions because the paper is
+  not about mumax3. The paper's Eq. 11 boundary condition *is* the free-spin
+  condition. Setting it: 40.5 deg, converging to the analytic value.
+
+No stated parameter was touched. The false answer had been stable and
+mesh-converged, so convergence testing alone would not have caught it - which is
+why the protocol checks conventions before concluding anything about physics.
+
+`references/simulator-conventions.md` catalogues these: boundary conditions,
+demag inclusion, bare `Ku1` versus effective `Keff`, DMI type and sign, and the
+unit traps (`emu/cm3`, `Ms` quoted as mu0*Ms in tesla).
+
+## Reverse direction: your own methods section
+
+Everything needed is already in the output directory.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/lib/mx3 provenance sim.out --script
 ```
 
-A methods paragraph that someone could actually follow:
+Include, because they change the numbers: exact build **and commit**; cell size
+and that it is below the exchange length; a convergence statement from
+**mx3-check** or an explicit note that it was not tested; any approximation
+enabled (`SpeculativeStep` and `DemagExtrapolation` alter the trajectory by
+design); and for thermal runs, that this port uses Philox rather than XORWOW, so
+agreement with a CUDA run is statistical, not trajectory-by-trajectory.
 
-> Micromagnetic simulations were performed with mumax³ 3.12 (commit 4506f313)
-> using the Metal backend on Apple silicon. The sample was discretised into
-> 128 × 32 × 1 cells of 3.91 × 3.91 × 3.0 nm; the in-plane cell size is below
-> the exchange length of 5.7 nm. Material parameters were Ms = 800 kA/m,
-> Aex = 13 pJ/m and α = 0.02. The Dormand-Prince solver was used with a
-> maximum error per step of 1 × 10⁻⁵. Results were verified to be unchanged
-> to within 2% under further mesh refinement.
-
-Include, because they change the numbers:
-
-- **exact build** — version *and* commit; forks differ
-- **cell size, and that it is below the exchange length**
-- **convergence statement** — from mx3-check, or say it was not tested
-- **any approximation enabled** — `SpeculativeStep` and `DemagExtrapolation`
-  alter the trajectory by design and must be declared
-- **thermal runs**: this port uses Philox, not cuRAND's XORWOW, so a seed
-  reproduces on Metal but does not reproduce a CUDA trajectory sample by
-  sample. State that agreement is statistical.
-
-### Reproduction bundle
-
-Ship the `.mx3`, the `log.txt`, the build identifier, and mumax³'s own
-`references.bib` (written into every output directory). That is enough for
-someone else to re-run it exactly.
-
----
+Ship the `.mx3`, `log.txt`, the build identifier, and the `references.bib`
+mumax3 writes into every output directory.
 
 ## Related skills
 
-- **mx3-authoring** — writes the script, and enforces the assumption header
-- **mx3-check** — supplies the convergence statement the methods needs
-- **mx3-tune** — tests how much an assumed parameter actually matters
-- **mx3-run** — `mx3 provenance` for the build record
+- **mx3-authoring** - writes the script and enforces the assumption header
+- **mx3-run** - runs it and extracts the observable
+- **mx3-check** - the convergence statement, and step 1 of any disagreement
+- **mx3-tune** - varies an assumed parameter to test how much it matters

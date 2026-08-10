@@ -1,0 +1,42 @@
+{
+  "paper": {
+    "id": "arXiv:1803.11174",
+    "title": "Proposal for a micromagnetic standard problem for materials with Dzyaloshinskii-Moriya interaction",
+    "figure": "Fig. 1a / Table I - one-dimensional edge tilting, interfacial DMI"
+  },
+  "stated": {
+    "Aex":  {"value": 13e-12,  "as_printed": "13 pJ/m",   "page": 3},
+    "Dind": {"value": 3.0e-3,  "as_printed": "3.0 mJ/m2", "page": 3},
+    "Msat": {"value": 0.86e6,  "as_printed": "0.86 MA/m", "page": 3},
+    "Ku1":  {"value": 0.4e6,   "as_printed": "0.4 MJ/m3", "page": 3},
+    "dimensions_m": {"value": [100e-9, 1e-9, 1e-9], "as_printed": "100 nm x 1 nm x 1 nm", "page": 3},
+    "cell_m": {"value": [1e-9, 1e-9, 1e-9], "as_printed": "1 x 1 x 1 nm3", "page": 4}
+  },
+  "assumed": {
+    "alpha": {"value": 1.0, "why": "not stated; the problem is static, so damping only sets how fast Relax() converges, not the answer"},
+    "initial_state": {"value": "Uniform(0,0,1)", "why": "not stated; along the stated easy axis"}
+  },
+  "numerics": {
+    "EnableDemag": "false - the paper states it does not include the demagnetising field in this problem (p.7), and its Eq. 5 energy has no magnetostatic term",
+    "OpenBC": "true - the paper's boundary condition (Eq. 11, dTheta/dx = 1/xi) is the free-spin condition; mumax3's default closed boundary gives a different edge tilt",
+    "cell_m": "refined below the stated 1 nm to show convergence"
+  },
+  "targets": [
+    {
+      "name": "edge tilt m_z",
+      "kind": "analytic",
+      "metric": "last:m_xrange0_z",
+      "expected": 0.7532,
+      "tolerance": 0.02,
+      "source": "paper Eq. 12, sin(Theta)=Delta/xi with Delta=sqrt(A/Ku)=5.70 nm, xi=2A/D=8.667 nm -> Theta=41.13 deg, m_z=cos(Theta)"
+    },
+    {
+      "name": "centre stays uniform",
+      "kind": "analytic",
+      "metric": "last:m_xrange400_z",
+      "expected": 1.0,
+      "tolerance": 0.01,
+      "source": "the tilt decays over Delta=5.7 nm, so the middle of a 100 nm wire is unperturbed"
+    }
+  ]
+}
