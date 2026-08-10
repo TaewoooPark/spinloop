@@ -1,0 +1,37 @@
+/*
+  Micromagnetic standard problem 4 (a): field-driven reversal of a permalloy
+  film. Reference values asserted below, so this script checks itself.
+  Units      : SI throughout (m, A/m, J/m, T, s)
+  Mesh       : 128x32x1 cells of 3.91x3.91x3.0 nm (l_ex = 5.7 nm, resolved)
+  Materials  : permalloy - Msat 800e3 A/m, Aex 13e-12 J/m, alpha 0.02
+  Outputs    : table.txt every 10 ps, m every 100 ps, snapshots every 50 ps
+  Unverified : nothing, for this reference problem - the asserted values come
+               from the upstream regression suite. Change any parameter and
+               the assertions no longer apply: delete them rather than
+               loosening the tolerance.
+*/
+
+SetGridSize(128, 32, 1)
+SetCellSize(500e-9/128, 125e-9/32, 3e-9)
+
+Msat  = 800e3
+Aex   = 13e-12
+alpha = 0.02
+
+// -- ground state --
+m = Uniform(1, 0.1, 0)
+Relax()
+Save(m)
+
+TOL := 1e-5
+ExpectV("m relaxed", m.Average(), vector(0.9669684171676636, 0.1252732127904892, 0), TOL)
+
+// -- reversal --
+TableAutoSave(10e-12)
+AutoSave(m, 100e-12)
+AutoSnapshot(m, 50e-12)
+
+B_ext = vector(-24.6e-3, 4.3e-3, 0)
+Run(1e-9)
+
+ExpectV("m reversed", m.Average(), vector(-0.9846124053001404, 0.12604089081287384, 0.04327124357223511), TOL)

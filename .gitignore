@@ -1,0 +1,21 @@
+# The mumax3-ultrafast checkout is a development reference for regenerating
+# references/api-index.md. It is not part of the plugin and must not ship
+# with it (63 MB, and it is its own GPL project with its own history).
+mumax3-ultrafast/
+
+# Scratch output from smoke runs / manual testing
+*.out/
+*.ovf
+*.dump
+table.txt
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Scratch from tune/converge runs
+tune_runs/
+converge_runs/
+
+# Design notes (not part of the plugin)
+mx3-authoring-skill-plan.md

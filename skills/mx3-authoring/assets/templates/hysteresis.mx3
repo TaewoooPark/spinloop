@@ -1,0 +1,40 @@
+/*
+  Hysteresis loop of a permalloy ellipse, field along the long axis.
+  Units      : SI throughout (m, A/m, J/m, T, s)
+  Mesh       : 128x64x1 cells of 3.9x3.9x5.0 nm (l_ex = 5.7 nm, resolved)
+  Materials  : permalloy - Msat 800e3 A/m, Aex 13e-12 J/m, alpha 1
+  Outputs    : table.txt, one row per field step (B_ext and <m>)
+  Unverified : field range and step must bracket the real switching field;
+               a 2 mT step may step over a sharp reversal - refine near the
+               transition if the loop looks square-shouldered.
+*/
+
+SetGridSize(128, 64, 1)
+SetCellSize(3.9e-9, 3.9e-9, 5.0e-9)
+
+// -- shape: an ellipse inscribed in the box --
+SetGeom(Ellipse(500e-9, 250e-9))
+
+Msat  = 800e3
+Aex   = 13e-12
+alpha = 1          // relaxation only; no dynamics wanted in a quasi-static loop
+
+m = Uniform(1, 0, 0)
+
+// -- what to record --
+TableAdd(B_ext)
+
+// -- sweep. mx3 has no user-defined functions, so the loop is written out. --
+// Descending branch: +50 mT -> -50 mT
+for B := 50.0; B >= -50.0; B -= 2.0 {
+	B_ext = vector(B*1e-3, 0, 0)
+	Relax()
+	TableSave()
+}
+
+// Ascending branch: -50 mT -> +50 mT
+for B := -50.0; B <= 50.0; B += 2.0 {
+	B_ext = vector(B*1e-3, 0, 0)
+	Relax()
+	TableSave()
+}

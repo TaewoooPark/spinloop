@@ -1,0 +1,372 @@
+#!/usr/bin/env python3
+"""mx3 - one command for reading and running mumax3 simulations.
+
+Used by every skill in this plugin so that a quantity means the same thing
+everywhere. Run `mx3 <command> -h` for details.
+
+    mx3 summary   DIR...          what is in this output directory
+    mx3 table     DIR [--csv F]   the time series
+    mx3 plot      DIR --y mz      quick plot (needs matplotlib)
+    mx3 image     DIR [--all]     snapshots as PNG, via mumax3-convert
+    mx3 loop      DIR             coercivity, remanence, squareness
+    mx3 velocity  DIR --pos ext_dwpos
+    mx3 settled   DIR --y mz      did it stop changing
+    mx3 physics   --Ms .. --A ..  closed-form estimates
+    mx3 run       FILE.mx3        run one input
+    mx3 batch     FILE.mx3 ...    run several with -j
+    mx3 provenance DIR            which build produced this
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from mx3lib import OutputDir, observe, physics, run  # noqa: E402
+
+
+def _fmt(v, unit=""):
+    if v is None:
+        return "n/a"
+    if isinstance(v, float):
+        if v != 0 and (abs(v) < 1e-3 or abs(v) >= 1e5):
+            s = f"{v:.4g}"
+        else:
+            s = f"{v:.6g}"
+    else:
+        s = str(v)
+    return f"{s} {unit}".strip()
+
+
+def _dirs(args) -> list[OutputDir]:
+    out = []
+    for d in args.dirs:
+        found = OutputDir.find(d)
+        if not found:
+            print(f"no mumax3 output found under {d}", file=sys.stderr)
+            sys.exit(2)
+        out += found
+    return out
+
+
+# ---------------------------------------------------------------------------
+
+def cmd_summary(args) -> int:
+    payload = []
+    for out in _dirs(args):
+        d = out.describe()
+        payload.append(d)
+        if args.json:
+            continue
+        print(f"\n{d['path']}")
+        if d["version"]:
+            print(f"  built by     {d['version']}  ({d['commit']}, {d['backend']})")
+        else:
+            print("  built by     unknown - run was started with -v=false")
+        if d["timestamp"]:
+            print(f"  run at       {d['timestamp']}")
+        if d["table_rows"]:
+            cols = ", ".join(d["table_columns"])
+            print(f"  table        {d['table_rows']} rows: {cols}")
+            if d["duration_s"]:
+                print(f"  simulated    {_fmt(d['duration_s'], 's')}")
+            else:
+                # Relax()/Minimize() do not advance time; an all-zero t column
+                # is normal for a quasi-static loop, not a broken run.
+                print("  simulated    0 s (quasi-static: Relax/Minimize only)")
+        else:
+            print("  table        none - the run saved no time series")
+        if d["snapshots"]:
+            snaps = ", ".join(f"{k}: {v}" for k, v in d["snapshots"].items())
+            print(f"  snapshots    {snaps}")
+        if d["images"]:
+            print(f"  images       {d['images']}")
+
+        t = out.table
+        if t:
+            bad = t.nan_columns()
+            if bad:
+                row = t.first_bad_row()
+                print(f"  WARNING      NaN in {', '.join(bad)} from row {row} - "
+                      f"the run diverged")
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    return 0
+
+
+def cmd_table(args) -> int:
+    out = _dirs(args)[0]
+    t = out.table
+    if not t:
+        print("no table.txt in this directory", file=sys.stderr)
+        return 1
+    if args.csv:
+        p = t.to_csv(args.csv)
+        print(f"wrote {p} ({len(t)} rows)")
+        return 0
+    print("\t".join(f"{n} ({u})" if u else n for n, u in zip(t.names, t.units)))
+    rows = t.rows if args.all else t.rows[:20]
+    for r in rows:
+        print("\t".join(f"{v:.6g}" for v in r))
+    if not args.all and len(t) > 20:
+        print(f"... {len(t) - 20} more rows (use --all, or --csv to export)")
+    return 0
+
+
+def cmd_plot(args) -> int:
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib is not installed; use `mx3 table DIR --csv out.csv` "
+              "and plot it however you like", file=sys.stderr)
+        return 2
+
+    out = _dirs(args)[0]
+    t = out.table
+    if not t:
+        print("no table.txt in this directory", file=sys.stderr)
+        return 1
+
+    x = t.column(args.x)
+    xu = t.unit(args.x)
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    for name in args.y:
+        ax.plot(x, t.column(name), label=f"{name} ({t.unit(name)})".replace(" ()", ""))
+    ax.set_xlabel(f"{args.x} ({xu})".replace(" ()", ""))
+    ax.legend()
+    ax.grid(alpha=0.3)
+    if args.title:
+        ax.set_title(args.title)
+    fig.tight_layout()
+    dest = Path(args.out) if args.out else out.path / "plot.png"
+    fig.savefig(dest, dpi=140)
+    print(f"wrote {dest}")
+    return 0
+
+
+def cmd_image(args) -> int:
+    out = _dirs(args)[0]
+    snaps = out.ovfs
+    if not snaps:
+        print("no .ovf snapshots in this directory - the script never called "
+              "Save()/AutoSave()", file=sys.stderr)
+        return 1
+    chosen = snaps if args.all else [snaps[-1]]
+    made = []
+    for s in chosen:
+        try:
+            made.append(out.export(s, "png", out=Path(args.out) if args.out else None,
+                                   comp=args.comp,
+                                   extra=(["-arrows", str(args.arrows)] if args.arrows else None)))
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+    for m in made:
+        print(m)
+    return 0
+
+
+def cmd_loop(args) -> int:
+    out = _dirs(args)[0]
+    t = out.table
+    if not t:
+        print("no table.txt", file=sys.stderr)
+        return 1
+    if not t.has(args.field):
+        print(f"no field column {args.field!r}. The script must record it with "
+              f"TableAdd(B_ext). Columns present: {t.names}", file=sys.stderr)
+        return 1
+    B, m = t.column(args.field), t.column(args.moment)
+    r = observe.hysteresis(B, m)
+    print(f"coercivity   {_fmt(r.coercivity, 'T')}"
+          + (f"  ({r.coercivity*1e3:.3g} mT)" if r.coercivity else ""))
+    print(f"remanence    {_fmt(r.remanence)}")
+    print(f"saturation   {_fmt(r.saturation)}")
+    print(f"squareness   {_fmt(r.squareness)}")
+    print(f"branches     {r.branches}")
+    if r.note:
+        print(f"note         {r.note}")
+    return 0
+
+
+def cmd_velocity(args) -> int:
+    out = _dirs(args)[0]
+    t = out.table
+    if not t or not t.has(args.pos):
+        print(f"no position column {args.pos!r}; record it with "
+              f"TableAdd({args.pos})", file=sys.stderr)
+        return 1
+    r = observe.velocity(t.column("t"), t.column(args.pos))
+    print(f"velocity     {_fmt(r.velocity, 'm/s')}")
+    print(f"fit quality  r^2 = {r.r_squared:.4f}")
+    if r.note:
+        print(f"note         {r.note}")
+    return 0
+
+
+def cmd_settled(args) -> int:
+    out = _dirs(args)[0]
+    t = out.table
+    if not t:
+        print("no table.txt", file=sys.stderr)
+        return 1
+    r = observe.settled(t.column(args.y), tolerance=args.tolerance)
+    print(f"settled      {'yes' if r.settled else 'no'}")
+    print(f"tail drift   {r.drift:.3%}" if r.drift == r.drift else "tail drift   n/a")
+    if r.note:
+        print(f"note         {r.note}")
+    return 0 if r.settled else 1
+
+
+def cmd_physics(args) -> int:
+    vals = physics.summarise(Ms=args.Ms, A=args.A, Ku1=args.Ku1,
+                             alpha=args.alpha, cell=args.cell, D=args.D)
+    if args.json:
+        print(json.dumps({k: v[0] for k, v in vals.items()}, indent=2))
+        return 0
+    width = max(len(k) for k in vals)
+    for k, (v, unit, note) in vals.items():
+        shown = v * 1e9 if unit == "m" else v
+        u = "nm" if unit == "m" else unit
+        print(f"{k:<{width}}  {_fmt(shown, u):<18} {note}")
+    return 0
+
+
+def cmd_run(args) -> int:
+    ok, why = run.available()
+    if not ok:
+        print(f"ENV: {why}", file=sys.stderr)
+        return 2
+    r = run.run_one(args.script, outdir=args.out, timeout=args.timeout)
+    print(r.summary())
+    if not r.ok:
+        for line in r.log_tail[-6:]:
+            print(f"    {line}")
+        return 1 if r.status != "environment" else 2
+    if r.outdir:
+        print(f"    results in {r.outdir}")
+    return 0
+
+
+def cmd_batch(args) -> int:
+    ok, why = run.available()
+    if not ok:
+        print(f"ENV: {why}", file=sys.stderr)
+        return 2
+    results = run.run_batch(args.scripts, jobs=args.jobs, timeout=args.timeout)
+    failed = 0
+    for r in results:
+        print(r.summary())
+        if not r.ok:
+            failed += 1
+    print(f"\n{len(results) - failed}/{len(results)} completed")
+    return 1 if failed else 0
+
+
+def cmd_provenance(args) -> int:
+    for out in _dirs(args):
+        p = out.provenance
+        print(f"\n{out.path}")
+        if not p.complete:
+            print("  INCOMPLETE - this run suppressed the version banner, so the "
+                  "directory cannot say which build produced it.")
+        for label, val in (("version", p.version), ("commit", p.commit),
+                           ("backend", p.backend), ("gpu", p.gpu),
+                           ("cpu", p.cpu), ("os", p.os), ("run at", p.timestamp)):
+            if val:
+                print(f"  {label:<9} {val}")
+        if p.citations:
+            print("  cite      " + "; ".join(p.citations))
+        if args.script and p.script:
+            print("  --- script as executed ---")
+            for line in p.script.splitlines():
+                print(f"  {line}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="mx3", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    def with_dirs(p):
+        p.add_argument("dirs", nargs="+", help="output directory (or a parent of several)")
+        return p
+
+    s = with_dirs(sub.add_parser("summary", help="what is in this output directory"))
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_summary)
+
+    s = with_dirs(sub.add_parser("table", help="show or export the time series"))
+    s.add_argument("--csv", help="write CSV here instead of printing")
+    s.add_argument("--all", action="store_true", help="print every row")
+    s.set_defaults(fn=cmd_table)
+
+    s = with_dirs(sub.add_parser("plot", help="quick plot of table columns"))
+    s.add_argument("--x", default="t")
+    s.add_argument("--y", nargs="+", required=True)
+    s.add_argument("--out")
+    s.add_argument("--title")
+    s.set_defaults(fn=cmd_plot)
+
+    s = with_dirs(sub.add_parser("image", help="render snapshots to PNG"))
+    s.add_argument("--all", action="store_true", help="every snapshot, not just the last")
+    s.add_argument("--comp", help="vector component: x, y or z")
+    s.add_argument("--arrows", type=int, default=0, help="overlay arrows of this size")
+    s.add_argument("--out", help="destination directory")
+    s.set_defaults(fn=cmd_image)
+
+    s = with_dirs(sub.add_parser("loop", help="hysteresis metrics"))
+    s.add_argument("--field", default="B_extx", help="swept field column")
+    s.add_argument("--moment", default="mx", help="magnetisation column")
+    s.set_defaults(fn=cmd_loop)
+
+    s = with_dirs(sub.add_parser("velocity", help="steady-state velocity from a position trace"))
+    s.add_argument("--pos", default="ext_dwpos")
+    s.set_defaults(fn=cmd_velocity)
+
+    s = with_dirs(sub.add_parser("settled", help="has the quantity stopped changing"))
+    s.add_argument("--y", default="mz")
+    s.add_argument("--tolerance", type=float, default=1e-3)
+    s.set_defaults(fn=cmd_settled)
+
+    s = sub.add_parser("physics", help="closed-form estimates from material parameters")
+    s.add_argument("--Ms", type=float, required=True, help="A/m")
+    s.add_argument("--A", type=float, required=True, help="J/m")
+    s.add_argument("--Ku1", type=float, default=0.0, help="J/m3")
+    s.add_argument("--alpha", type=float)
+    s.add_argument("--cell", type=float, help="cell size in m")
+    s.add_argument("--D", type=float, help="DMI in J/m2")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_physics)
+
+    s = sub.add_parser("run", help="run one input")
+    s.add_argument("script")
+    s.add_argument("--out")
+    s.add_argument("--timeout", type=float, default=1800)
+    s.set_defaults(fn=cmd_run)
+
+    s = sub.add_parser("batch", help="run several inputs with -j")
+    s.add_argument("scripts", nargs="+")
+    s.add_argument("--jobs", type=int, default=3)
+    s.add_argument("--timeout", type=float, default=3600)
+    s.set_defaults(fn=cmd_batch)
+
+    s = with_dirs(sub.add_parser("provenance", help="which build produced this"))
+    s.add_argument("--script", action="store_true", help="also print the script as executed")
+    s.set_defaults(fn=cmd_provenance)
+
+    args = ap.parse_args()
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

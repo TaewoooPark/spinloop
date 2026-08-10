@@ -1,0 +1,28 @@
+/*
+  Minimal skeleton: relax a permalloy film and save the ground state.
+  Units      : SI throughout (m, A/m, J/m, T, s)
+  Mesh       : 128x128x1 cells of 3.9x3.9x3.0 nm (l_ex = 5.7 nm, resolved)
+  Materials  : permalloy - Msat 800e3 A/m, Aex 13e-12 J/m, alpha 1 (relaxation)
+  Outputs    : final magnetisation (m.ovf), one table row
+  Unverified : material constants are literature permalloy, not a measured
+               sample; whether the relaxed state is the global minimum.
+*/
+
+// -- mesh: counts first, then lengths in metres --
+SetGridSize(128, 128, 1)
+SetCellSize(3.9e-9, 3.9e-9, 3.0e-9)
+
+// -- material --
+Msat  = 800e3
+Aex   = 13e-12
+alpha = 1          // high damping: we only want the static state
+
+// -- initial state --
+m = RandomMag()
+
+// -- solve --
+Relax()
+
+// -- output --
+TableSave()
+Save(m)

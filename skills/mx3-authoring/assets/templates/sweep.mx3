@@ -1,0 +1,38 @@
+/*
+  One point of a parameter sweep. Generate one file per parameter value and
+  run them as a batch:  mumax3 -j 3 sweep_*.mx3   (2.53x aggregate measured)
+  Units      : SI throughout (m, A/m, J/m, T, s)
+  Mesh       : 128x128x1 cells of 3.9x3.9x1.0 nm (l_ex = 5.2 nm, resolved)
+  Materials  : CoFeB-like - Msat 1050e3 A/m, Aex 19e-12 J/m, alpha 0.02
+  Outputs    : table.txt with the swept value as a column, final state
+  Unverified : the swept range; Ku1 here is a placeholder - substitute the
+               value for the real stack and confirm the range brackets the
+               reorientation transition.
+*/
+
+// -- the swept parameter. This is the only line that differs between files. --
+Ku1_value := 0.5e6      // J/m3
+
+SetGridSize(128, 128, 1)
+SetCellSize(3.9e-9, 3.9e-9, 1.0e-9)
+
+Msat  = 1050e3
+Aex   = 19e-12
+alpha = 0.02
+
+// -- perpendicular anisotropy, the quantity being swept --
+Ku1   = Ku1_value
+anisU = vector(0, 0, 1)
+
+m = Uniform(0, 0, 1)
+
+// -- record the swept value so the batch output is self-describing --
+TableAdd(E_total)
+TableAdd(E_anis)
+
+// Wall-clock guard: an unattended batch must not hang on one bad parameter.
+RelaxWallClockTime = 300
+
+Relax()
+TableSave()
+Save(m)
