@@ -163,16 +163,21 @@ def measure(out: OutputDir, metric: str) -> float:
         # <m_z> = (S - 2*A_sk)/S, so A_sk = S*(1 - <m_z>)/2 and r = sqrt(A/pi).
         # Needs no .ovf and therefore no mumax3-convert. `arg` is the film area
         # in m^2; the column is assumed to be mz.
+        # "skyrmion:AREA" uses the whole-film <mz>; "skyrmion:AREA:COLUMN"
+        # uses a cropped region, which is what you want when the film has a
+        # confining frame that should not count towards the skyrmion.
+        area_txt, _, col = arg.partition(":")
         try:
-            area = float(arg)
+            area = float(area_txt)
         except ValueError:
             raise ValueError(
                 "skyrmion: needs the film area in m2, e.g. 'skyrmion:1.444e-15' "
-                "for a 38x38 nm region"
+                "for a 38x38 nm region, optionally 'skyrmion:AREA:COLUMN'"
             )
-        if not table.has("mz"):
-            raise ValueError("no mz column; the run must record it")
-        mz = table.last("mz")
+        col = col.strip() or "mz"
+        if not table.has(col):
+            raise ValueError(f"no {col!r} column; the run must record it")
+        mz = table.last(col)
         a_sk = area * (1.0 - mz) / 2.0
         if a_sk <= 0:
             return 0.0

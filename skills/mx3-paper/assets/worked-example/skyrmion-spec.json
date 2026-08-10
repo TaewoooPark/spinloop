@@ -1,0 +1,87 @@
+{
+  "paper": {
+    "id": "arXiv:2112.04967",
+    "title": "From the spin eigenmodes of isolated Neel skyrmions to the magnonic bands of a skyrmionic crystal",
+    "figure": "Sec. III text: skyrmion radius vs D at constant A = 9.25 pJ/m"
+  },
+  "stated": {
+    "Msat_r1": {
+      "value": 1020000.0,
+      "as_printed": "1.02 MA/m",
+      "page": 3
+    },
+    "Aex_r1": {
+      "value": 9.25e-12,
+      "as_printed": "9.25 pJ/m",
+      "page": 3
+    },
+    "Msat_r2": {
+      "value": 860000.0,
+      "as_printed": "0.86 MA/m",
+      "page": 3
+    },
+    "Aex_r2": {
+      "value": 1.2e-11,
+      "as_printed": "12 pJ/m",
+      "page": 3
+    },
+    "region1_size": {
+      "value": [
+        3.8e-08,
+        3.8e-08,
+        1e-09
+      ],
+      "as_printed": "38x38 nm2, 1 nm thickness",
+      "page": 3
+    },
+    "cell": {
+      "value": [
+        1e-09,
+        1e-09,
+        1e-09
+      ],
+      "as_printed": "cubic cells of side 1 nm",
+      "page": 3
+    }
+  },
+  "interpreted": {
+    "Ku1_r1": {
+      "value": 788125,
+      "why": "the paper prints 'Ku = 0.65 kJ/m2', which is an areal energy, not an anisotropy. Neither natural reading works: 0.65 MJ/m3 as a bare Ku gives Keff = -3.7 kJ/m3 (no perpendicular easy axis, skyrmion swells to the frame); 0.65 MJ/m3 as Keff gives Ku1 = 1.30 MJ/m3 and the skyrmion collapses below D = 2.5. 788 kJ/m3 (Keff = 134 kJ/m3) was determined from the D = 1.0 target and then reproduced the INDEPENDENT D = 3.0 target to 0.5%."
+    },
+    "Ku1_r2": {
+      "value": 17665000.0,
+      "why": "same unit problem; 17.2 MJ/m3 is SmCo5's textbook anisotropy, which is why that reading is used. Shape term added back for consistency. The frame is hard enough that this barely matters."
+    }
+  },
+  "assumed": {
+    "alpha": {
+      "value": 1.0,
+      "why": "not stated; static problem"
+    },
+    "frame_width": {
+      "value": 1e-08,
+      "why": "the paper states a frame surrounds region 1 but not its width"
+    }
+  },
+  "targets": [
+    {
+      "name": "diameter at D = 1.0 mJ/m2",
+      "kind": "stated",
+      "metric": "skyrmion:1.444e-15:m_xrange10-48_yrange10-48_z",
+      "expected": 5e-09,
+      "tolerance": 6e-10,
+      "source": "p.4 text: 'radius increases from about 10 to 25 nm when D is lifted from 1.0 to 3.0 mJ/m2' - read as DIAMETER, since a 25 nm radius does not fit a 38 nm region. USED to determine Ku1_r1.",
+      "outdir": "sk4_1.0e-3.out"
+    },
+    {
+      "name": "diameter at D = 3.0 mJ/m2",
+      "kind": "stated",
+      "metric": "skyrmion:1.444e-15:m_xrange10-48_yrange10-48_z",
+      "expected": 1.25e-08,
+      "tolerance": 1.5e-09,
+      "source": "same sentence. NOT used for fitting - this is the independent check.",
+      "outdir": "sk4_3.0e-3.out"
+    }
+  ]
+}

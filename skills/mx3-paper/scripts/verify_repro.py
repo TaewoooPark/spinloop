@@ -53,7 +53,10 @@ KIND_NOTE = {
 }
 
 
-def check(spec: dict, out: OutputDir) -> list[dict]:
+def check(spec: dict, out: OutputDir, base: Path | None = None) -> list[dict]:
+    """Verify every target. A sweep has one run per point, so a target may name
+    its own output directory; otherwise the one passed on the command line is
+    used."""
     results = []
     for t in spec.get("targets", []):
         name = t.get("name", t.get("metric", "?"))
@@ -71,8 +74,20 @@ def check(spec: dict, out: OutputDir) -> list[dict]:
                             "note": "target has no metric/expected"})
             continue
 
+        target_out = out
+        if t.get("outdir"):
+            cand = Path(t["outdir"])
+            if not cand.is_absolute() and base is not None:
+                cand = base / cand
+            try:
+                target_out = OutputDir(cand)
+            except NotADirectoryError:
+                results.append({"name": name, "kind": kind, "status": "ERROR",
+                                "note": f"target names outdir {cand}, which is "
+                                        f"not a mumax3 output directory"})
+                continue
         try:
-            got = measure(out, metric)
+            got = measure(target_out, metric)
         except ValueError as exc:
             results.append({"name": name, "kind": kind, "status": "ERROR",
                             "note": str(exc)})
@@ -117,7 +132,7 @@ def main() -> int:
         print(f"  target figure: {paper['figure']}")
     print()
 
-    results = check(spec, out)
+    results = check(spec, out, base=args.outdir.parent)
     if not results:
         print("The spec declares no targets, so nothing was checked.")
         print("A reproduction without a target is not a reproduction - it is a run.")

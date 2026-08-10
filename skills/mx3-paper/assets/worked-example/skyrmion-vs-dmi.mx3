@@ -1,0 +1,54 @@
+Ku_value := 788125
+/*
+  Reproduction: isolated Neel skyrmion radius vs DMI.
+  Bassotti, Silvani & Carlotti, arXiv:2112.04967.
+
+  Units      : SI throughout
+  Mesh       : 58x58x1 cells of 1 nm  (STATED: region 1 is 38x38 nm2 with 1 nm
+               cubic cells and 1 nm thickness; the surrounding frame's width is
+               NOT stated, taken as 10 nm each side)
+  Materials  : region 1 FeCo  Ms 1.02e6 (STATED), Aex 9.25e-12 (STATED),
+                             Ku1 0.65e6 (interpreted, see below)
+               region 2 SmCo  Ms 0.86e6 (STATED), Aex 12e-12 (STATED),
+                             Ku1 17.2e6 (interpreted, see below)
+  Assumed    : alpha = 1 (not stated; static problem)
+               frame width 10 nm (not stated)
+               frame magnetised +z, hard, to confine the skyrmion
+  Unverified : the paper prints both anisotropies in "kJ/m2", which is an areal
+               energy, not an anisotropy. Read as MJ/m3 - the reading under
+               which region 2 becomes 17.2 MJ/m3, i.e. SmCo5's textbook value.
+               That agreement is why this reading is used; it is still an
+               interpretation of a typo, not a stated value.
+*/
+
+D_value := 1.0e-3
+
+SetGridSize(58, 58, 1)
+SetCellSize(1e-9, 1e-9, 1e-9)
+
+// region 1: the 38x38 nm FeCo square that hosts the skyrmion
+DefRegion(1, Rect(38e-9, 38e-9))
+// region 2: everything else - the hard SmCo frame that confines it
+DefRegion(2, Rect(38e-9, 38e-9).Inverse())
+
+Msat.SetRegion(1, 1.02e6)
+Aex.SetRegion(1, 9.25e-12)
+Ku1.SetRegion(1, Ku_value)
+
+Msat.SetRegion(2, 0.86e6)
+Aex.SetRegion(2, 12e-12)
+Ku1.SetRegion(2, 17.665e6)  // Keff 17.2e6 + mu0*Ms(2)^2/2
+
+anisU = vector(0, 0, 1)
+Dind.SetRegion(1, D_value)
+Dind.SetRegion(2, 0)
+alpha = 1
+
+m = Uniform(0, 0, 1)
+m.SetInShape(Circle(16e-9), NeelSkyrmion(1, -1))
+
+TableAdd(Crop(m, 10, 48, 10, 48, 0, 1))
+RelaxWallClockTime = 60
+Relax()
+TableSave()
+Save(m)

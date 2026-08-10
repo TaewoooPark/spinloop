@@ -673,9 +673,64 @@ def rule_size(s: Script) -> list[Finding]:
     return out
 
 
+
+def rule_keff_sign(s: Script) -> list[Finding]:
+    """A perpendicular texture on a film whose effective anisotropy is not
+    perpendicular.
+
+    Keff = Ku1 - mu0*Ms^2/2. When a script sets anisU along z, leaves demag on,
+    and initialises a PMA texture (skyrmion, out-of-plane uniform), a Keff at
+    or below zero means there is no perpendicular easy axis to hold that
+    texture: it will swell until something else stops it, or collapse.
+
+    This is the commonest way a reproduction goes wrong, because papers quote
+    Ku both ways -- bare, and already reduced by shape. Feeding an effective
+    Ku to Ku1 while demag is on subtracts the shape term twice.
+    """
+    ku, ku_line = s.last_value("ku1")
+    ms, _ = s.last_value("msat")
+    if ku is None or not ms:
+        return []
+    if _truthy_assign(s, "enabledemag") is None and s.assigned("enabledemag"):
+        return []                      # demag explicitly off: Ku1 is the whole story
+
+    # is the easy axis out of plane?
+    axis_z = False
+    for a in s.assigned("anisu"):
+        v = a.value.replace(" ", "").lower()
+        if v.startswith("vector(0,0,") or v.startswith("vector(0.0,0.0,"):
+            axis_z = True
+    if not axis_z:
+        return []
+
+    # is a perpendicular texture being initialised?
+    pma_init = s.has_call("neelskyrmion", "blochskyrmion", "hopfioncompactsupport")
+    for a in s.assigned("m"):
+        v = a.value.replace(" ", "").lower()
+        if v.startswith("uniform(0,0,") or "skyrmion" in v:
+            pma_init = True
+    if not pma_init:
+        return []
+
+    keff = ku - MU0 * ms * ms / 2
+    if keff > 0:
+        return []
+    return [Finding(
+        "R-KEFF", "physics", "ERROR", ku_line,
+        f"Ku1 = {ku:g} J/m3 with Msat = {ms:g} A/m gives Keff = {keff:+.4g} J/m3, "
+        f"so the film has no perpendicular easy axis - but the script "
+        f"initialises a perpendicular texture.",
+        f"Either the texture cannot be stable, or Ku1 has been given an "
+        f"ALREADY-EFFECTIVE anisotropy while demag is on, which subtracts "
+        f"mu0*Ms^2/2 = {MU0*ms*ms/2:.4g} J/m3 twice. If the source quotes Keff, "
+        f"set Ku1 = Keff + {MU0*ms*ms/2:.4g}.",
+    )]
+
+
 RULES = (
     rule_grid_int, rule_cell_si, rule_msat, rule_aex, rule_exchange_length,
     rule_mesh_order, rule_no_output, rule_relax_temp, rule_alpha,
+    rule_keff_sign,
     rule_fork_speculative, rule_fork_demag, rule_fork_accuracy,
     rule_header, rule_size,
 )
