@@ -61,6 +61,17 @@ NAMES: dict[str, list[str]] = {
 }
 
 # Which physical quantity each script parameter is, for the unit engine.
+# Physically plausible SI ranges. PDFs lose superscript minus signs -
+# "1.3 x 10^-11 J/m" can extract as "1.3 x 10^11", which is 22 orders out and
+# looks like a perfectly ordinary number. A range check is the only thing that
+# catches it.
+PLAUSIBLE = {
+    "Aex":  (1e-13, 1e-10),
+    "Dind": (1e-5, 1e-1), "Dbulk": (1e-5, 1e-1),
+    "Msat": (1e3, 1e7),
+    "Ku1":  (1e2, 1e8),
+}
+
 QUANTITY_OF = {"Aex": "Aex", "Dind": "DMI", "Dbulk": "DMI", "Msat": "Msat",
                "Ku1": "Ku", "Temp": None, "Pol": None, "xi": None,
                "alpha": None}
@@ -238,6 +249,15 @@ def harvest(pages: list[str]) -> tuple[list[Candidate], list[tuple]]:
                         # exactly the kind of thing a reader must see.
                         refused.append((param, f"{m.group(2)} {unit}", pno,
                                         str(exc), ctx))
+                        continue
+                    lo, hi = PLAUSIBLE.get(param, (None, None))
+                    if lo is not None and not (lo <= abs(conv.value) <= hi):
+                        refused.append((
+                            param, f"{m.group(2)} {unit}", pno,
+                            f"converts to {conv.value:.4g} SI, outside the "
+                            f"plausible range {lo:g}..{hi:g}. A lost minus sign "
+                            f"in an exponent is the usual cause - check the page.",
+                            ctx))
                         continue
                     found.append(Candidate(
                         param, conv.value, m.group(2).strip(), unit, pno,
