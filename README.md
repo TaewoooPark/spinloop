@@ -26,7 +26,7 @@ spinloop turns micromagnetic simulation into something you can **ask for in
 ordinary sentences**. You say what you want to know — *"find the field where
 this film switches"*, *"is my mesh fine enough to trust"*, *"run it like this
 paper"* — and it writes the mumax³ script, runs it on your Mac, reads the
-output, and hands you the number with the caveats attached.
+output, and hands you the answer.
 
 It is built on [mumax3-ultrafast](https://github.com/TaewoooPark/mumax3-ultrafast),
 the Apple Silicon Metal port of [mumax³](https://mumax.github.io/). Simulations
@@ -34,12 +34,12 @@ that used to mean a cluster queue now finish in seconds on a laptop — which
 changes what you can reasonably ask for. You can iterate inside a conversation
 instead of inside a job scheduler.
 
-The point is not to write your scripts for you. It is to **remove the mechanical
-failures** — a typo that costs you an overnight run, a mesh too coarse to mean
-anything, a paper's parameter in cgs pasted into an SI field — so that the only
-thing left to review is the physics.
+It kills the mechanical failures — a typo that costs you an overnight run, a
+mesh too coarse to mean anything, a paper's parameter in cgs pasted into an SI
+field. Every script is compiled before you ever see it, every number comes back
+with the mesh it was computed on.
 
-> *"A converged mesh tells you the number stopped moving. It does not tell you the number is right. spinloop removes everything except that question."*
+> *"You should be arguing about the physics, not about whether the script compiled."*
 
 [**taewoopark.com** — author site](https://taewoopark.com)
 
@@ -97,7 +97,7 @@ just say what you want.
 |---|---|
 | *"write me a hysteresis script"* | **mx3-authoring** — a `.mx3` file that has already been compiled. You are never shown code that does not run. It also catches unit and mesh mistakes that mumax³'s own checker cannot see. |
 | *"run it and show me"* | **mx3-run** — the simulation runs, and you get the curve and the number. Not a folder of `.ovf` files. If it diverges or stalls, you're told why. |
-| *"keep adjusting until it works"* | **mx3-tune** — varies a parameter automatically until your target is met, or reports honestly that it cannot be. Also finds thresholds: the field where a sample switches, the anisotropy where a film turns perpendicular. |
+| *"keep adjusting until it works"* | **mx3-tune** — varies a parameter automatically until your target is met, or tells you the target is out of reach. Also finds thresholds: the field where a sample switches, the anisotropy where a film turns perpendicular. |
 | *"can I trust this?"* | **mx3-check** — refines the mesh until the answer stops changing, then cross-checks against textbook micromagnetics. This is the reviewer's convergence question, answered before they ask it. |
 | *"match my measurement"* | **mx3-match** — takes your measured VSM / MOKE / AHE loop and finds parameters that reproduce it, while telling you which features of the loop actually constrain which parameter. |
 | *"run it like this paper"* | **mx3-paper** — give it the PDF. It pulls out the parameters, converts the units, writes the script, and lists exactly which values the paper stated and which had to be assumed. It also writes your own methods paragraph. |
@@ -182,18 +182,6 @@ asks you which convention the paper meant.
 
 ---
 
-## Two things it will not do
-
-- **Show you unverified work as if it were verified.** Every generated script
-  passes mumax³'s own compiler before it reaches you, and every report keeps
-  what was checked mechanically separate from what you still have to judge.
-- **Tell you your physics is right.** A converged mesh says nothing about
-  whether your model matches your sample. The tooling removes mechanical
-  failure so that the remaining review is purely physical — which is the part
-  only you can do.
-
----
-
 ## What it catches that a fast simulator does not
 
 A faster GPU runs the wrong simulation faster. These are the failures that
@@ -202,13 +190,12 @@ survive speed, and each has a check behind it:
 - **A converged answer that is still wrong.** Refining the mesh makes a number
   stop moving — including when a boundary-condition setting is wrong for your
   problem. Papers rarely state such settings, because papers are not about
-  mumax³. Convergence testing alone will never find this; a cross-check against
-  the closed-form answer will.
+  mumax³. Convergence testing alone never finds this; the cross-check against
+  the closed-form answer does.
 - **Parameters that describe an impossible simulation.** If a paper's stated
   `A` and `Ms` give an exchange length shorter than the material's own lattice
-  constant, then no valid continuum simulation exists at any cell size. That is
-  a result about the paper, and reporting it is more useful than producing a
-  number.
+  constant, no valid continuum simulation exists at any cell size. You get that
+  diagnosis in a second instead of a week of mesh refinement.
 - **A number lost between the PDF and the script.** A superscript minus sign
   dropped by a PDF extractor turns `1.3 × 10⁻¹¹` into `1.3 × 10¹¹` — twenty-two
   orders of magnitude, and perfectly plausible-looking in a table. Every
@@ -327,29 +314,8 @@ does not re-derive this month's conclusions.
 | **For pictures and movies** | numpy + matplotlib — almost every scientific Python already has both. Without them, fields export as `.npy` |
 | **For `.mp4`** | ffmpeg — without it you get `.gif` |
 
-`.ovf` files are read by the plugin itself, so **`mumax3-convert` is not
-required** even though the published release does not ship it. The reader was
-checked against `mumax3-convert` on the same file: the arrays agree exactly.
-
----
-
-## Scope
-
-Stated plainly, because a tool that hides its edges is worth nothing:
-
-- **It does not validate your physics.** It validates that your script compiles,
-  that your mesh resolves the length scales, and that your numbers are
-  internally consistent. Whether the model describes your sample is your call
-  and always will be.
-- **Apple Silicon only.** The engine is a Metal port. On Linux or Windows with
-  an NVIDIA card, use upstream mumax³ directly — the scripts this writes are
-  ordinary `.mx3` and run there unchanged.
-- **A reproduction that disagrees is still a result.** When a paper cannot be
-  reproduced, the useful output is the diagnosed reason, not a fudged number.
-  Hardcoding a parameter to force agreement is explicitly out of scope.
-- **Thermal runs are reproducible, not identical to CUDA.** The engine uses
-  Philox rather than cuRAND's XORWOW, so a seed reproduces on Metal but does not
-  replay CUDA's sample-by-sample trajectory.
+**`mumax3-convert` is not needed** — the plugin reads `.ovf` itself. The reader
+was checked against `mumax3-convert` on the same file: the arrays agree exactly.
 
 ---
 
@@ -360,6 +326,9 @@ The simulation engine is
 Metal port of [mumax³](https://github.com/mumax/3) — 3.3× to 30× faster than
 every other micromagnetic simulator that runs on Apple Silicon, and validated
 against the upstream CUDA-era references.
+
+What comes out is ordinary `.mx3`. Hand it to a colleague with a CUDA box and it
+runs there unchanged.
 
 Cite [Vansteenkiste et al., *AIP Advances* **4**, 107133 (2014)](https://doi.org/10.1063/1.4899186)
 for any published work. Every simulation also writes a `references.bib`
