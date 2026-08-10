@@ -126,10 +126,17 @@ def normalise(text: str) -> str:
     return text
 
 
-NUM = r"[-+]?\d+(?:[.,]\d+)?(?:\s*[x×]\s*10\s*\^?\s*[-+]?\d+|[eE][-+]?\d+)?"
+# A number, optionally with an uncertainty ("1.4 +- 0.1") and optionally with
+# a x10^n factor that may sit AFTER the uncertainty ("1.4 +- 0.1 x10^6").
+_UNC = r"(?:\s*(?:\u00b1|\+/-|\+-)\s*\d+(?:[.,]\d+)?)?"
+_EXP = r"(?:\s*[x\u00d7]\s*10\s*\^?\s*[-+]?\d+|[eE][-+]?\d+)?"
+NUM = r"[-+]?\d+(?:[.,]\d+)?" + _UNC + _EXP
 
 
 def to_float(tok: str) -> float | None:
+    # Drop an uncertainty before parsing: the central value is what we want,
+    # and the spread belongs in the target tolerance, not the parameter.
+    tok = re.sub(r"(\u00b1|\+/-|\+-)\s*\d+(?:[.,]\d+)?", "", tok)
     tok = tok.replace(",", ".").replace(" ", "")
     m = re.match(r"^([-+]?\d+(?:\.\d+)?)[x×]10\^?([-+]?\d+)$", tok)
     if m:
@@ -154,7 +161,12 @@ class Candidate:
 # Grab anything that LOOKS like a unit; mx3lib.units decides if it is one and
 # whether it fits the quantity. A closed list of spellings would miss
 # "erg cm-3", "pJ m^-1", "kA m-1" and every other way a journal sets units.
-UNIT_TOKEN = r"([A-Za-z\u00b5\u03bc]+\s*-?\d*(?:\s*/\s*[A-Za-z\u00b5\u03bc]+\s*-?\d*)?)"
+# One optional space-separated continuation, because typesetting splits a
+# prefix from its unit ("1.02 M A/m"). best_unit() then backtracks and closes
+# the gap, so a stray trailing character cannot poison the whole token.
+_U = r"[A-Za-z\u00b5\u03bc]+"
+UNIT_TOKEN = (r"(" + _U + r"(?:\s+" + _U + r")?\s*-?\d*"
+              r"(?:\s*/\s*" + _U + r"\s*-?\d*)?)")
 
 
 def unit_pattern(quantity: str) -> str:
@@ -174,11 +186,13 @@ def best_unit(token: str, value: float, quantity: str):
         cand = token[:end].strip().rstrip("/")
         if not cand:
             continue
-        try:
-            return cand, units.convert(value, cand, quantity)
-        except units.UnitError as exc:
-            last = exc
-            continue
+        # Try as written, then with internal spaces closed up: typesetting
+        # separates a prefix from its unit ("1.02 M A/m" for MA/m).
+        for form in (cand, re.sub(r"\s+", "", cand)):
+            try:
+                return form, units.convert(value, form, quantity)
+            except units.UnitError as exc:
+                last = exc
     raise last or units.UnitError(f"no valid unit in {token!r}")
 
 
@@ -193,6 +207,12 @@ def harvest(pages: list[str]) -> tuple[list[Candidate], list[tuple]]:
         # otherwise the word boundary in an alias like \bD\b never matches.
         flat = re.sub(r"([a-z0-9])([A-Z][A-Za-z_]{0,3}\s*[=:]?\s*[-+]?\d)",
                       r"\1 \2", flat)
+        # PDFs render subscripts as separate tokens: "M s = 900 kA/m", "A ex",
+        # "K u". Rejoin, but only for known subscripts followed by a value, so
+        # ordinary prose is untouched.
+        flat = re.sub(
+            r"\b([AMKDJ])\s+(s|sat|ex|exch|u|u1|u2|c|c1|eff|ind|bulk|s0)\b"
+            r"(?=\s*[=:]?\s*[-+]?\d)", r"\1\2", flat)
 
         for param, aliases in NAMES.items():
             quantity = QUANTITY_OF.get(param)

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import shutil
 import sys
@@ -156,12 +157,33 @@ def measure(out: OutputDir, metric: str) -> float:
             raise ValueError(f"no column {col!r}; record it with TableAdd({col})")
         return observe.velocity(table.column("t"), table.column(col)).velocity
 
+    if kind == "skyrmion":
+        # Radius of a reversed core in a uniformly magnetised film, from the
+        # spatial average alone: with m_z = -1 inside and +1 outside,
+        # <m_z> = (S - 2*A_sk)/S, so A_sk = S*(1 - <m_z>)/2 and r = sqrt(A/pi).
+        # Needs no .ovf and therefore no mumax3-convert. `arg` is the film area
+        # in m^2; the column is assumed to be mz.
+        try:
+            area = float(arg)
+        except ValueError:
+            raise ValueError(
+                "skyrmion: needs the film area in m2, e.g. 'skyrmion:1.444e-15' "
+                "for a 38x38 nm region"
+            )
+        if not table.has("mz"):
+            raise ValueError("no mz column; the run must record it")
+        mz = table.last("mz")
+        a_sk = area * (1.0 - mz) / 2.0
+        if a_sk <= 0:
+            return 0.0
+        return math.sqrt(a_sk / math.pi)
+
     if kind == "settled":
         return 0.0 if observe.settled(table.column(arg)).settled else 1.0
 
     raise ValueError(
         f"unknown metric kind {kind!r}. Use last:, min:, max:, abs:, loop:, "
-        f"velocity: or settled:"
+        f"velocity:, skyrmion: or settled:"
     )
 
 
