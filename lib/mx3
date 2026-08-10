@@ -12,6 +12,7 @@ everywhere. Run `mx3 <command> -h` for details.
     mx3 velocity  DIR --pos ext_dwpos
     mx3 settled   DIR --y mz      did it stop changing
     mx3 physics   --Ms .. --A ..  closed-form estimates
+    mx3 convert   1400 emu/cm3 Msat   paper units -> mumax3 SI
     mx3 run       FILE.mx3        run one input
     mx3 batch     FILE.mx3 ...    run several with -j
     mx3 provenance DIR            which build produced this
@@ -26,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from mx3lib import OutputDir, observe, physics, run  # noqa: E402
+from mx3lib import OutputDir, observe, physics, run, units  # noqa: E402
 
 
 def _fmt(v, unit=""):
@@ -238,6 +239,19 @@ def cmd_physics(args) -> int:
     return 0
 
 
+def cmd_convert(args) -> int:
+    """Convert a value from whatever units a paper used into mumax3's SI."""
+    try:
+        c = units.convert(args.value, args.unit, args.quantity, reading=args.reading)
+    except units.UnitError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(f"{args.value:g} {args.unit}  ->  {c.value:.6g} {c.si_unit}")
+    if c.note:
+        print(f"  {c.note}")
+    return 0
+
+
 def cmd_run(args) -> int:
     ok, why = run.available()
     if not ok:
@@ -347,6 +361,15 @@ def main() -> int:
     s.add_argument("--D", type=float, help="DMI in J/m2")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_physics)
+
+    s = sub.add_parser("convert", help="convert a paper's units into mumax3 SI")
+    s.add_argument("value", type=float)
+    s.add_argument("unit", help="e.g. emu/cm3, erg/cm, kOe, pJ/m, MJ/m3")
+    s.add_argument("quantity", choices=sorted(units.QUANTITY_DIM),
+                   help="what the number is")
+    s.add_argument("--reading", choices=["mu0Ms", "4piMs"],
+                   help="resolve a magnetisation quoted in T or G")
+    s.set_defaults(fn=cmd_convert)
 
     s = sub.add_parser("run", help="run one input")
     s.add_argument("script")

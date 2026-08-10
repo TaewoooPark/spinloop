@@ -34,39 +34,18 @@ import sys
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
-MU0 = 4e-7 * math.pi
+HERE = Path(__file__).resolve()
+for _cand in (HERE.parents[3] / "lib", HERE.parents[2] / "lib"):
+    if (_cand / "mx3lib").is_dir():
+        sys.path.insert(0, str(_cand))
+        break
+from mx3lib import units  # noqa: E402
+
+MU0 = units.MU0
 
 # --------------------------------------------------------------------------
 # units
 # --------------------------------------------------------------------------
-
-# quantity -> {unit token: factor to SI}
-UNITS: dict[str, dict[str, float]] = {
-    "A": {          # exchange stiffness, J/m
-        "pJ/m": 1e-12, "pJm-1": 1e-12, "J/m": 1.0, "nJ/m": 1e-9,
-        "erg/cm": 1e-5,
-    },
-    "D": {          # DMI, J/m^2
-        "mJ/m2": 1e-3, "mJm-2": 1e-3, "J/m2": 1.0, "uJ/m2": 1e-6,
-        "erg/cm2": 1e-3,
-    },
-    "Ms": {         # saturation magnetisation, A/m
-        "MA/m": 1e6, "kA/m": 1e3, "A/m": 1.0,
-        "emu/cm3": 1e3, "emu/cc": 1e3, "kG": 1e3 / (4 * math.pi) * 1e3,
-    },
-    "Ku": {         # anisotropy, J/m^3
-        "MJ/m3": 1e6, "kJ/m3": 1e3, "J/m3": 1.0,
-        "erg/cm3": 0.1, "Merg/cm3": 1e5,
-    },
-    "length": {
-        "nm": 1e-9, "um": 1e-6, "µm": 1e-6, "mm": 1e-3, "A": 1e-10, "m": 1.0,
-    },
-    "field": {      # tesla
-        "mT": 1e-3, "T": 1.0, "Oe": 1e-4, "kOe": 1e-1, "G": 1e-4,
-    },
-    "time": {"fs": 1e-15, "ps": 1e-12, "ns": 1e-9, "us": 1e-6, "ms": 1e-3, "s": 1.0},
-    "current": {"A/m2": 1.0, "MA/cm2": 1e10, "A/cm2": 1e4},
-}
 
 # How a paper names each thing. Order matters: longer/more specific first.
 NAMES: dict[str, list[str]] = {
@@ -81,7 +60,10 @@ NAMES: dict[str, list[str]] = {
     "xi":   [r"non-?adiabatic(?:ity)?(?: parameter)?"],
 }
 
-QUANTITY_OF = {"Aex": "A", "Dind": "D", "Dbulk": "D", "Msat": "Ms", "Ku1": "Ku"}
+# Which physical quantity each script parameter is, for the unit engine.
+QUANTITY_OF = {"Aex": "Aex", "Dind": "DMI", "Dbulk": "DMI", "Msat": "Msat",
+               "Ku1": "Ku", "Temp": None, "Pol": None, "xi": None,
+               "alpha": None}
 
 # Things a run needs that papers routinely omit.
 CRITICAL = {
@@ -169,16 +151,48 @@ class Candidate:
     confidence: str       # "labelled" | "unit-only"
 
 
+# Grab anything that LOOKS like a unit; mx3lib.units decides if it is one and
+# whether it fits the quantity. A closed list of spellings would miss
+# "erg cm-3", "pJ m^-1", "kA m-1" and every other way a journal sets units.
+UNIT_TOKEN = r"([A-Za-z\u00b5\u03bc]+\s*-?\d*(?:\s*/\s*[A-Za-z\u00b5\u03bc]+\s*-?\d*)?)"
+
+
 def unit_pattern(quantity: str) -> str:
-    toks = sorted(UNITS[quantity], key=len, reverse=True)
-    return "(" + "|".join(re.escape(t) for t in toks) + ")"
+    return UNIT_TOKEN
 
 
-def harvest(pages: list[str]) -> list[Candidate]:
+def best_unit(token: str, value: float, quantity: str):
+    """Longest prefix of `token` that is a valid unit for `quantity`.
+
+    Journal tables often set no space between a unit and the next symbol, so a
+    greedy grab yields "pJ/mD" or "MA/mKu". Backtracking from the full token
+    finds "pJ/m" and "MA/m" without needing to know the table's layout.
+    """
+    token = token.strip()
+    last: units.UnitError | None = None
+    for end in range(len(token), 0, -1):
+        cand = token[:end].strip().rstrip("/")
+        if not cand:
+            continue
+        try:
+            return cand, units.convert(value, cand, quantity)
+        except units.UnitError as exc:
+            last = exc
+            continue
+    raise last or units.UnitError(f"no valid unit in {token!r}")
+
+
+def harvest(pages: list[str]) -> tuple[list[Candidate], list[tuple]]:
     found: list[Candidate] = []
+    refused: list[tuple] = []
     for pno, raw in enumerate(pages, start=1):
         text = normalise(raw)
         flat = re.sub(r"\s*\n\s*", " ", text)
+        # PDF tables lose the column gap: "A 13 pJ/mD 3.0 mJ/m2 Ms 0.86 MA/mKu".
+        # Re-insert a space where a unit runs straight into the next row label,
+        # otherwise the word boundary in an alias like \bD\b never matches.
+        flat = re.sub(r"([a-z0-9])([A-Z][A-Za-z_]{0,3}\s*[=:]?\s*[-+]?\d)",
+                      r"\1 \2", flat)
 
         for param, aliases in NAMES.items():
             quantity = QUANTITY_OF.get(param)
@@ -194,13 +208,20 @@ def harvest(pages: list[str]) -> list[Candidate]:
                     val = to_float(m.group(2))
                     if val is None:
                         continue
-                    unit = m.group(3)
-                    si = val * UNITS[quantity][unit]
+                    unit = m.group(3).strip()
                     lo = max(0, m.start() - 90)
+                    ctx = flat[lo:m.end() + 60].strip()
+                    try:
+                        unit, conv = best_unit(unit, val, quantity)
+                    except units.UnitError as exc:
+                        # Not a silent drop: a unit that cannot be converted is
+                        # exactly the kind of thing a reader must see.
+                        refused.append((param, f"{m.group(2)} {unit}", pno,
+                                        str(exc), ctx))
+                        continue
                     found.append(Candidate(
-                        param, si, m.group(2).strip(), unit, pno,
-                        flat[lo:m.end() + 60].strip(),
-                        "labelled" if not alias.startswith(r"\b") else "unit-only",
+                        param, conv.value, m.group(2).strip(), unit, pno,
+                        ctx, conv.note or "converted",
                     ))
                     break   # first alias that matches wins for this param/page
 
@@ -210,7 +231,7 @@ def harvest(pages: list[str]) -> list[Candidate]:
         key = (c.param, round(c.value_si, 18))
         if key not in seen or c.page < seen[key].page:
             seen[key] = c
-    return sorted(seen.values(), key=lambda c: (c.param, c.page))
+    return sorted(seen.values(), key=lambda c: (c.param, c.page)), refused
 
 
 def find_mentions(pages: list[str], patterns: list[str]) -> list[tuple[int, str]]:
@@ -258,7 +279,7 @@ def main() -> int:
 
     print(f"{args.pdf.name}: {len(pages)} pages\n")
 
-    cands = harvest(pages)
+    cands, refused = harvest(pages)
     print("=" * 72)
     print("CANDIDATE PARAMETERS  (every unit-bearing number; you must choose)")
     print("=" * 72)
@@ -276,6 +297,21 @@ def main() -> int:
         if len(group) > 1:
             print(f"  ^ {len(group)} different values. Pick the one describing THIS "
                   f"sample, not a citation.")
+
+    if refused:
+        print("\n" + "-" * 72)
+        print("NOT CONVERTED  (a number was found but its unit does not fit)")
+        print("-" * 72)
+        seen_r = set()
+        for param, printed, pno, why, ctx in refused:
+            key = (param, printed)
+            if key in seen_r:
+                continue
+            seen_r.add(key)
+            print(f"\n  {param}: {printed}  (p{pno})")
+            print(f"    {why[:200]}")
+        print("\n  These are not dropped silently because a wrong unit is often a"
+              "\n  typo in the paper, or a quantity you have mistaken for another.")
 
     print("\n" + "=" * 72)
     print("SIMULATION SETUP  (what the paper says about how it was run)")
