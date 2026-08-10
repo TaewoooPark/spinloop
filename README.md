@@ -74,9 +74,13 @@ that matches what will really run.
 ### Optional
 
 - **matplotlib** — for quick plots. Without it you still get CSV.
-- **`mumax3-convert`** — for rendering `.ovf` snapshots to PNG. It is not in
-  the release; build from a source checkout (`cd mumax3-ultrafast && make`) if
-  you want images. Everything else works without it.
+- **numpy + matplotlib** — for pictures, movies and plots (`mx3-view`). Almost
+  every scientific Python already has both. Without them the rest still works
+  and field data can be exported as `.npy`.
+- **ffmpeg** — for `.mp4` movies. Without it you get `.gif`.
+
+`.ovf` files are read by the plugin itself, so `mumax3-convert` is **not**
+required even though the release does not ship it.
 
 ## Try it
 
@@ -96,6 +100,14 @@ Is my 8 nm cell fine enough for this coercivity?
 Here is my measured MOKE loop. What parameters reproduce it?
 ```
 
+```
+Show me what the domains look like, and make a movie of the wall moving.
+```
+
+```
+I have a CoFeB film, Ms 1050 kA/m, Ku 1.2 MJ/m3. What is worth simulating?
+```
+
 ## How it fits together
 
 ```
@@ -112,15 +124,23 @@ mx3-authoring  ──►  mx3-run  ──►  mx3-check
               mx3-match / mx3-paper
               target comes from your
               data, or from a paper
+
+
+                       mx3-view
+              a picture of what those numbers describe
 ```
 
-All six share one library (`lib/mx3lib`), so "coercivity" means the same thing
+Before any of that, **mx3-plan** answers what is worth simulating at all, and
+**mx3-lab** builds the field sequence when the goal is to mirror a measurement.
+**mx3-log** keeps the record across sessions.
+
+All ten share one library (`lib/mx3lib`), so "coercivity" means the same thing
 in every skill.
 
 ## Requirements
 
 - macOS on Apple Silicon (M1 or later)
-- Python 3.9+ (standard library only)
+- Python 3.9+ — the core is standard library only; pictures need numpy and matplotlib
 - Claude Code
 
 ## Licence
