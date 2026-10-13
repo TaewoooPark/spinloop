@@ -1,7 +1,7 @@
 {
   "name": "spinloop",
-  "version": "0.1.0",
-  "description": "Run micromagnetic simulations on your Mac and get answers, not output directories. Writes verified .mx3 scripts, runs them and shows the result, searches a parameter until a target is met, checks whether the mesh is fine enough to trust, matches against measured hysteresis data, and reproduces a paper's setup. Built on mumax3-ultrafast, the Apple Silicon Metal port.",
+  "version": "0.2.0",
+  "description": "Run micromagnetic simulations on your Mac and get answers, not output directories. Writes verified .mx3 scripts, runs them and shows the result, searches a parameter until a target is met, checks whether the mesh is fine enough to trust, matches against measured hysteresis data, reproduces a paper's setup, fits several parameters to many simulated measurements at once, and answers theory questions from a built-in reference library. Built on mumax3-ultrafast, the Apple Silicon Metal port.",
   "author": {
     "name": "Taewoo Park"
   },
@@ -22,6 +22,8 @@
     "apple-silicon",
     "simulation",
     "physics",
-    "materials-science"
+    "materials-science",
+    "fitting",
+    "parameter-estimation"
   ]
 }

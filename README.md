@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Metal-000000?style=flat-square&logo=apple&logoColor=white&labelColor=000000" alt="Metal">
   <img src="https://img.shields.io/badge/mumax³-000000?style=flat-square&labelColor=000000&color=000000" alt="mumax3">
   &nbsp;
-  <img src="https://img.shields.io/badge/10%20skills-000000?style=flat-square&labelColor=000000&color=000000" alt="10 skills">
+  <img src="https://img.shields.io/badge/13%20skills-000000?style=flat-square&labelColor=000000&color=000000" alt="13 skills">
   <img src="https://img.shields.io/badge/Every%20script%20compiled-000000?style=flat-square&labelColor=000000&color=000000" alt="Every script compiled first">
   <img src="https://img.shields.io/badge/Paper%20PDF%20→%20figure-000000?style=flat-square&labelColor=000000&color=000000" alt="Paper PDF to figure">
   <img src="https://img.shields.io/badge/No%20cluster-000000?style=flat-square&labelColor=000000&color=000000" alt="No cluster">
@@ -88,7 +88,7 @@ that makes you actually do it.
 
 ---
 
-## The ten things you can say
+## The thirteen things you can say
 
 Each skill is a sentence you'd say out loud. You never invoke them by name —
 just say what you want.
@@ -100,13 +100,16 @@ just say what you want.
 | *"keep adjusting until it works"* | **mx3-tune** — varies a parameter automatically until your target is met, or tells you the target is out of reach. Also finds thresholds: the field where a sample switches, the anisotropy where a film turns perpendicular. |
 | *"can I trust this?"* | **mx3-check** — refines the mesh until the answer stops changing, then cross-checks against textbook micromagnetics. This is the reviewer's convergence question, answered before they ask it. |
 | *"match my measurement"* | **mx3-match** — takes your measured VSM / MOKE / AHE loop and finds parameters that reproduce it, while telling you which features of the loop actually constrain which parameter. |
+| *"fit these measurements all at once"* | **mx3-fit** — finds several unknown parameters from many measured numbers when each number needs its own simulation. It works in time-boxed steps you can resume, records every run, never runs the same script twice, and reports χ², residuals, error bars and correlations, including which measurement pins which parameter. |
 | *"run it like this paper"* | **mx3-paper** — give it the PDF. It pulls out the parameters, converts the units, writes the script, and lists exactly which values the paper stated and which had to be assumed. It also writes your own methods paragraph. |
 | *"show me what it looks like"* | **mx3-view** — domain images, skyrmion colour maps, MOKE-style renders, wall profiles, movies. Reads `.ovf` itself, so nothing extra to install. |
 | *"what should I even simulate?"* | **mx3-plan** — from your material parameters: which magnetic states are possible, where the boundaries are, what mesh you need, what it will cost. Instant — nothing is simulated. |
 | *"simulate our VSM measurement"* | **mx3-lab** — builds the field sequence a real instrument applies: major and minor loops, switching field vs. angle, FMR ringdown. |
 | *"what did I run last time?"* | **mx3-log** — a lab notebook rebuilt from the output folders themselves. What ran, what it settled at, what is still open. |
+| *"what value should I expect?"* | **mx3-physics** — a reference library of micromagnetic theory, from units and length scales to wall dynamics, spin waves, thermal effects and spin torques. Each formula comes with its range of validity, typical values, and how a simulation measures the same quantity. |
+| *"ask someone who knows the theory"* | **mx3-consult** — a second opinion from a separate model session that holds the whole mx3-physics library. Ask whether a formula applies to your geometry, why a fit misses some points, or whether a plan is sound. Every exchange is logged. |
 
-All ten share one library, so **"coercivity" means the same thing in every
+All thirteen share one library, so **"coercivity" means the same thing in every
 skill** — the same reader, the same definition, the same units.
 
 ---
@@ -303,6 +306,24 @@ Before any of it, **mx3-plan** answers *what is worth simulating at all*, and
 measurement. **mx3-log** keeps the record across sessions, so next month's you
 does not re-derive this month's conclusions.
 
+When several parameters have to come from several measurements at once,
+**mx3-fit** takes over from mx3-tune. **mx3-physics** gives the expectation
+before a run and the sanity check after it, and **mx3-consult** puts the same
+library behind a second opinion.
+
+---
+
+## What's new in 0.2.0
+
+| Addition | What it does |
+|---|---|
+| **mx3-fit** | Fits several parameters at once to many measured numbers, each of which needs a simulation. Levenberg–Marquardt with finite-difference and Broyden Jacobians. Calls are time-boxed and resumable, every run is in a ledger, and results are cached by script content. The report gives χ², residuals, σ and correlations, and which datum constrains which parameter. |
+| **mx3-physics** | A reference library in eleven chapters: units and magnitudes, characteristic scales, domain walls, wall dynamics, skyrmions and vortices, spin waves and FMR, reversal and hysteresis, thermal effects, numerics, inverse problems and spin torques. Each chapter gives closed forms with their validity, typical values, sanity checks, how a simulation measures the quantity, and references. |
+| **mx3-consult** | A separate model session that holds the whole library and the conversation. It answers physics and method questions, reasons before answering, and logs every exchange in `.mx3-consult/`. |
+| Unit guard | `mx3 run`/`batch` and lint rule R-FIELD warn when a script applies a field component above 5 T. A value that large almost always means mT were typed where tesla are expected. |
+| No orphans | A timed-out run is ended together with every process it started. `mx3 batch --timeout` is a budget for the whole call, and scripts that cannot finish are reported NOT RUN. Without `-j`, scripts run one at a time. |
+| Walker field | `mx3 physics` takes the Walker field from the anisotropy the wall moment feels (the wall's own demagnetising anisotropy, or DMI via the 1D model of Thiaville et al. 2012), not from the uniaxial K; the old estimate was 10–100× too high for thin films. `--t` gives the film thickness. |
+
 ---
 
 ## What it needs
@@ -313,6 +334,9 @@ does not re-derive this month's conclusions.
 | **For plots** | matplotlib — without it you still get CSV |
 | **For pictures and movies** | numpy + matplotlib — almost every scientific Python already has both. Without them, fields export as `.npy` |
 | **For `.mp4`** | ffmpeg — without it you get `.gif` |
+| **For mx3-fit** | numpy |
+| **For mx3-consult** | an Anthropic-compatible endpoint: `MX3_CONSULT_BASE_URL`, `MX3_CONSULT_MODEL` and `MX3_CONSULT_API_KEY`, or the `ANTHROPIC_*` variables Claude Code already uses |
+| **Other engines** | upstream mumax³ (CUDA) works too: 0.2.0 was exercised with mumax³ 3.12 on Windows 10. Without `-j`, `mx3 batch` runs scripts one after another |
 
 **`mumax3-convert` is not needed** — the plugin reads `.ovf` itself. The reader
 was checked against `mumax3-convert` on the same file: the arrays agree exactly.
