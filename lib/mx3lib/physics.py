@@ -107,21 +107,51 @@ def fmr_out_of_plane(B: float, Ms: float, Ku1: float = 0.0,
     return max(f, 0.0)
 
 
-def walker_field(alpha: float, K: float, Ms: float) -> float:
-    """Walker breakdown field in the 1D model, B_W ~ alpha * K / Ms.
+def walker_field(alpha: float, K_perp: float, Ms: float) -> float:
+    """Walker breakdown field in the 1D model, B_W = alpha * K_perp / Ms (T).
 
-    CONVENTION WARNING. The Walker field depends on which anisotropy enters:
-    for a PMA wire it is set by the wall's own demagnetising anisotropy, not by
-    the uniaxial K that sets the wall width, and different papers write it with
-    a factor of 1/2 or with mu0 Ms / 2 in place of K/Ms.
+    K_perp is the anisotropy that the wall MOMENT feels when it turns between
+    the Bloch and the Neel structure -- NOT the uniaxial K (or Keff) that sets
+    the wall width. Passing Keff here overestimates B_W by 1-2 orders of
+    magnitude in thin films. For a thin film without DMI, K_perp is the wall's
+    own demagnetising anisotropy (see wall_demag_anisotropy); with interfacial
+    DMI use walker_field_dmi.
 
-    Treat the result as an order of magnitude that says "breakdown is around
-    here", not as a number to compare to three digits. If the simulated
-    velocity peak sits within a factor of ~2, that is agreement.
+    1D rigid-wall model: real strips deviate by tens of percent (wall tilt,
+    finite width, edges), so read the result as "breakdown is around here".
     """
     if Ms <= 0:
         raise ValueError("Ms must be positive")
-    return alpha * K / Ms
+    return alpha * K_perp / Ms
+
+
+def wall_demag_anisotropy(t: float, Delta: float, Ms: float) -> float:
+    """Bloch-Neel anisotropy of a wall in an ultrathin film, K_D = N_x mu0 Ms^2 / 2
+    with N_x ~ t ln2 / (pi Delta) (Tarasenko et al. 1998), in J/m^3. Thin film
+    (t << Delta); the Bloch wall is the lower-energy structure without DMI."""
+    return t * math.log(2) / (math.pi * Delta) * MU0 * Ms * Ms / 2
+
+
+def walker_field_thiaville(alpha: float, D: float, Ms: float, Delta: float, t: float) -> float:
+    """Walker field of a thin-film wall with interfacial DMI AND its own demagnetising anisotropy, from the 1D
+    q-phi model (Thiaville et al., EPL 100, 57002, 2012): B_W = alpha sin(phi_W) [(pi/2) B_DMI - B_K cos(phi_W)],
+    cos(phi_W) = (delta - sqrt(delta^2 + 8))/4, delta = (pi/2) B_DMI / B_K, with B_DMI = D/(Ms Delta) and
+    B_K = 2 K_D / Ms. Reduces to alpha B_K / 2 at D = 0 and to (pi/2) alpha B_DMI at large D. In T."""
+    B_K = 2 * wall_demag_anisotropy(t, Delta, Ms) / Ms
+    B_D = abs(D) / (Ms * Delta)
+    delta = (math.pi / 2) * B_D / B_K
+    c = (delta - math.sqrt(delta * delta + 8)) / 4
+    return alpha * math.sqrt(1 - c * c) * ((math.pi / 2) * B_D - B_K * c)
+
+
+def walker_field_dmi(alpha: float, D: float, Ms: float, Delta: float) -> float:
+    """Walker field of a Neel wall stabilised by interfacial DMI, when the DMI
+    dominates the wall's own demagnetising anisotropy (Thiaville et al., EPL 100,
+    57002, 2012): B_W ~ (pi/2) alpha D / (Ms Delta), in T. 1D model; real strips
+    deviate by tens of percent."""
+    if Ms <= 0 or Delta <= 0:
+        raise ValueError("Ms and Delta must be positive")
+    return math.pi / 2 * alpha * abs(D) / (Ms * Delta)
 
 
 def wall_mobility(alpha: float, gamma_ll: float = GAMMA_LL) -> float:
@@ -153,7 +183,7 @@ def cells_per_wall(cell: float, A: float, K: float) -> float:
 
 
 def summarise(Ms: float, A: float, Ku1: float = 0.0, alpha: float | None = None,
-              cell: float | None = None, D: float | None = None) -> dict:
+              cell: float | None = None, D: float | None = None, t: float | None = None) -> dict:
     """Every estimate that the given parameters support.
 
     Returns a dict of name -> (value, unit, note). Entries whose assumptions
@@ -173,9 +203,20 @@ def summarise(Ms: float, A: float, Ku1: float = 0.0, alpha: float | None = None,
         out["wall_width"] = (wall_width(A, Keff), "m", "pi*Delta, the usual quoted width")
         out["critical_dmi"] = (critical_dmi(A, Keff), "J/m2",
                                "above this the uniform state spirals")
-        if alpha:
-            out["walker_field"] = (walker_field(alpha, Keff, Ms), "T",
-                                   "order of magnitude only")
+        Delta = wall_parameter(A, Keff)
+        if alpha and D and t:
+            out["walker_field"] = (walker_field_thiaville(alpha, D, Ms, Delta, t), "T",
+                                   "1D model with DMI and the wall's own anisotropy (Thiaville 2012)")
+        elif alpha and D:
+            out["walker_field"] = (walker_field_dmi(alpha, D, Ms, Delta), "T",
+                                   "1D, large-D limit (pi/2) alpha D/(Ms Delta); low if D is near the Neel "
+                                   "threshold: give --t")
+        elif alpha and t:
+            out["walker_field"] = (walker_field(alpha, wall_demag_anisotropy(t, Delta, Ms), Ms), "T",
+                                   "1D model, thin film without DMI: alpha K_D/Ms")
+        if t:
+            out["neel_threshold_dmi"] = (2 * math.log(2) * MU0 * Ms * Ms * t / math.pi ** 2, "J/m2",
+                                         "above this D the wall is fully Neel (thin film)")
         if cell:
             out["cells_per_wall"] = (cells_per_wall(cell, A, Keff), "",
                                      "below ~4 the wall is under-resolved")

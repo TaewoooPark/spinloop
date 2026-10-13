@@ -14,7 +14,7 @@ everywhere. Run `mx3 <command> -h` for details.
     mx3 physics   --Ms .. --A ..  closed-form estimates
     mx3 convert   1400 emu/cm3 Msat   paper units -> mumax3 SI
     mx3 run       FILE.mx3        run one input
-    mx3 batch     FILE.mx3 ...    run several with -j
+    mx3 batch     FILE.mx3 ...    run several (one call, bounded by --timeout)
     mx3 provenance DIR            which build produced this
 """
 
@@ -294,7 +294,7 @@ def cmd_settled(args) -> int:
 
 def cmd_physics(args) -> int:
     vals = physics.summarise(Ms=args.Ms, A=args.A, Ku1=args.Ku1,
-                             alpha=args.alpha, cell=args.cell, D=args.D)
+                             alpha=args.alpha, cell=args.cell, D=args.D, t=args.t)
     if args.json:
         print(json.dumps({k: v[0] for k, v in vals.items()}, indent=2))
         return 0
@@ -325,7 +325,7 @@ def cmd_run(args) -> int:
         print(f"ENV: {why}", file=sys.stderr)
         return 2
     r = run.run_one(args.script, outdir=args.out, timeout=args.timeout)
-    print(r.summary())
+    print(r.summary(), flush=True)
     if not r.ok:
         for line in r.log_tail[-6:]:
             print(f"    {line}")
@@ -343,10 +343,12 @@ def cmd_batch(args) -> int:
     results = run.run_batch(args.scripts, jobs=args.jobs, timeout=args.timeout)
     failed = 0
     for r in results:
-        print(r.summary())
+        print(r.summary(), flush=True)
         if not r.ok:
             failed += 1
-    print(f"\n{len(results) - failed}/{len(results)} completed")
+    skipped = [r for r in results if r.status == "skipped"]
+    print(f"\n{len(results) - failed}/{len(results)} completed" +
+          (f"; {len(skipped)} not run because the batch time was used up" if skipped else ""))
     return 1 if failed else 0
 
 
@@ -453,6 +455,7 @@ def main() -> int:
     s.add_argument("--alpha", type=float)
     s.add_argument("--cell", type=float, help="cell size in m")
     s.add_argument("--D", type=float, help="DMI in J/m2")
+    s.add_argument("--t", type=float, help="film thickness in m (for the wall's own anisotropy)")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_physics)
 
@@ -471,10 +474,11 @@ def main() -> int:
     s.add_argument("--timeout", type=float, default=1800)
     s.set_defaults(fn=cmd_run)
 
-    s = sub.add_parser("batch", help="run several inputs with -j")
+    s = sub.add_parser("batch", help="run several inputs (with -j where the build has it)")
     s.add_argument("scripts", nargs="+")
     s.add_argument("--jobs", type=int, default=3)
-    s.add_argument("--timeout", type=float, default=3600)
+    s.add_argument("--timeout", type=float, default=3600,
+                   help="seconds for the WHOLE batch; scripts that cannot finish in it are reported NOT RUN")
     s.set_defaults(fn=cmd_batch)
 
     s = with_dirs(sub.add_parser("provenance", help="which build produced this"))
