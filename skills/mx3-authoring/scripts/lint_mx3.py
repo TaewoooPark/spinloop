@@ -531,12 +531,12 @@ def rule_alpha(s: Script) -> list[Finding]:
             )]
         return []
     out = []
-    if alpha == 0 and s.has_call("run", "steps", "relax", "minimize"):
+    if alpha == 0 and s.has_call("run", "steps", "runwhile"):
         out.append(Finding(
             "R-ALPHA", "physics", "WARN", line,
-            "alpha = 0 with an evolution call: undamped precession never relaxes.",
-            "Relax()/Minimize() cannot converge and Run() conserves energy "
-            "forever. Use alpha > 0 unless this is deliberate.",
+            "alpha = 0 with Run(): undamped precession never relaxes.",
+            "Run() conserves energy forever at alpha = 0. Relax()/Minimize() do "
+            "not use alpha. Use alpha > 0 for Run() unless this is deliberate.",
         ))
     if alpha > 1:
         out.append(Finding(
@@ -727,12 +727,32 @@ def rule_keff_sign(s: Script) -> list[Finding]:
     )]
 
 
+def rule_field_units(s: Script) -> list[Finding]:
+    """A constant applied field above 5 T is almost always mT typed where tesla are expected."""
+    out = []
+    for a in s.assigned("b_ext"):
+        v = a.value.strip()
+        if not v.lower().startswith("vector("):
+            continue
+        args = split_args(v[v.index("(") + 1:v.rindex(")")] if ")" in v else v[7:])
+        vals = [s.num(x.strip().lower()) for x in args[:3]]
+        big = [x for x in vals if x is not None and abs(x) > 5.0]
+        if big:
+            out.append(Finding(
+                "R-FIELD", "physics", "WARN", a.line,
+                f"B_ext has a component of {big[0]:g} T; mumax3 fields are in tesla.",
+                "50 mT is 0.05. A component above 5 T is beyond any laboratory magnet - check whether a value in mT "
+                "was written where tesla are expected.",
+            ))
+    return out
+
+
 RULES = (
     rule_grid_int, rule_cell_si, rule_msat, rule_aex, rule_exchange_length,
     rule_mesh_order, rule_no_output, rule_relax_temp, rule_alpha,
     rule_keff_sign,
     rule_fork_speculative, rule_fork_demag, rule_fork_accuracy,
-    rule_header, rule_size,
+    rule_header, rule_size, rule_field_units,
 )
 
 

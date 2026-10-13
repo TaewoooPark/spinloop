@@ -119,18 +119,21 @@ geometry/regions → material parameters → initial state → run.
 
 ---
 
-## 7. alpha = 0 with a relaxer — `R-ALPHA`
+## 7. alpha = 0 with `Run()` — `R-ALPHA`
 
 ```go
 alpha = 0
-Relax()
+Run(10e-9)     // expecting the system to settle
 ```
 
-Undamped precession conserves energy, so the relaxation has nothing to descend.
-`Relax()` cannot converge and either runs to its wall-clock guard or spins.
+Undamped precession conserves energy, so a `Run()` never settles: it precesses
+for ever. `Relax()` and `Minimize()` are different: they switch precession off
+and descend the energy directly, and they do not use `alpha` at all (the engine
+calls its no-precession torque, −m×(m×B), without the damping factor). So
+`alpha` does not matter for a relaxer, and a relaxed state does not depend on it.
 
-Use `alpha = 1` for fast relaxation, then set the physical `alpha` before the
-dynamics run.
+To settle a state with `Run()` (when the dynamic path matters), use `alpha = 1`
+or so, then set the physical `alpha` before the dynamics run.
 
 ---
 
