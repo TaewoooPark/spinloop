@@ -123,9 +123,11 @@ def velocity(t: list[float], pos: list[float], skip_fraction: float = 0.3) -> Ve
     accelerates before it reaches terminal velocity, and including the
     transient biases the fit low.
 
-    r_squared is reported because a poor fit is meaningful -- oscillating
-    position after Walker breakdown gives a low r^2, and a velocity quoted from
-    that is not a steady-state velocity at all.
+    r_squared is reported because a poor fit is meaningful. Past Walker
+    breakdown the wall oscillates back and forth while it advances: the mean
+    velocity over whole oscillation periods is meaningful (and is what
+    experiments measure), but a window shorter than a few periods gives a low
+    r^2 and a slope that depends on where the window starts.
     """
     n = len(t)
     if n != len(pos) or n < 4:
@@ -146,8 +148,8 @@ def velocity(t: list[float], pos: list[float], skip_fraction: float = 0.3) -> Ve
 
     note = ""
     if r2 < 0.9:
-        note = (f"poor linear fit (r^2={r2:.2f}); motion is not steady - "
-                f"oscillation past Walker breakdown, pinning, or too short a run")
+        note = (f"poor linear fit (r^2={r2:.2f}); motion is not steady - past Walker "
+                f"breakdown average over several whole oscillation periods; or pinning, or too short a run")
     return VelocityFit(slope, r2, (start, n), note)
 
 

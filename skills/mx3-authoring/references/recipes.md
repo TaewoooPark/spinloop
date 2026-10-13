@@ -189,10 +189,10 @@ rely on vet and lint for those.
 
 | | |
 |---|---|
-| `SetSolver(1)` | Euler — fixed step only, needs `FixDt` |
+| `SetSolver(1)` | Euler — first order; with `FixDt` a fixed step, otherwise dt = `MaxErr`/max torque and no step is ever rejected: for reference only |
 | `SetSolver(2)` | Heun |
 | `SetSolver(3)` | Bogacki-Shampine |
-| `SetSolver(4)` | Runge-Kutta 4/5 |
+| `SetSolver(4)` | classical Runge-Kutta 4 |
 | `SetSolver(5)` | Dormand-Prince — the default choice for dynamics |
 | `SetSolver(6)` | Fehlberg |
 

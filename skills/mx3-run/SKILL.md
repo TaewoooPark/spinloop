@@ -51,6 +51,24 @@ produced the result. Results land in `sim.out/`.
 Exit codes: `0` ran, `1` the script failed, `2` this machine cannot run it.
 A `2` means stop editing the script — the problem is not in the script.
 
+Several scripts in one call:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/lib/mx3 batch a.mx3 b.mx3 c.mx3 --timeout 600
+```
+
+`--timeout` is the budget for the **whole** call. On an engine without `-j` the
+scripts run one after another, and a script that cannot finish in the time left
+is not started: it is reported `NOT RUN`, to be run in another call. Keep the
+budget below the time limit of the shell command that runs it. A script that
+times out is ended together with every process it started, so nothing keeps
+running in the background.
+
+Both `run` and `batch` print a `WARNING` when a script applies a field
+component above 5 T. mumax3 fields are in tesla (50 mT is `0.05`); a value
+like `B_ext = vector(0, 0, 50)` is almost always mT typed as tesla. Fix the
+script instead of explaining the warning away.
+
 Before a long run, say how long it will be. If the mesh is below 128×128, say
 so: a fixed ~180 µs per evaluation dominates there, so a bigger mesh or a
 faster GPU will not help, and several parameter sets at once will.
@@ -84,8 +102,10 @@ mx3 settled  sim.out --y mz                       # did it stop changing
 ```
 
 Report the fit quality when you report a velocity. A low r² means the motion
-was not steady — past Walker breakdown the wall oscillates, and a single
-velocity quoted from that is meaningless.
+was not steady. Past Walker breakdown the wall oscillates while it advances:
+the mean velocity over several whole oscillation periods is meaningful (it is
+what experiments measure), but a window shorter than that gives a slope that
+depends on where the window starts.
 
 ## When it fails
 

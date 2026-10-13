@@ -107,10 +107,16 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/mx3-tune/scripts/tune.py loop.mx3 \
 Search on the feature that actually constrains the parameter. Searching on
 coercivity will converge — to the wrong answer, confidently.
 
-Vary **one** parameter at a time. Two free parameters against one loop is
-under-determined, and the search will find a value without finding the truth.
-If two are genuinely unknown, get one from an independent measurement (Ms from
-saturation, thickness from XRR) rather than from the same loop.
+Against a single loop, vary **one** parameter at a time. Two free parameters
+against one loop is under-determined, and the search will find a value without
+finding the truth. If two are genuinely unknown, get one from an independent
+measurement (Ms from saturation, thickness from XRR) rather than from the same
+loop.
+
+With several independent measurements (a loop and a resonance, a set of
+velocities at different fields, sizes at different fields) and several
+unknowns, fit them jointly with **mx3-fit**: adjusting one parameter at a time
+against many data zig-zags and hides correlations.
 
 ## Reporting
 
@@ -148,6 +154,7 @@ The same logic holds for other measurements, without a dedicated script yet:
 - **mx3-authoring** — write the loop that mirrors the measurement
 - **mx3-run** — extract the simulated loop metrics
 - **mx3-tune** — search the remaining unknown parameter
+- **mx3-fit** — several unknowns against several measurements, jointly
 - **mx3-check** — confirm the match is not a mesh artefact
 - **mx3-lab** — simulate the measurement protocol itself, not just its result
 - **mx3-view** — a `kerr` render to put beside the measured image
