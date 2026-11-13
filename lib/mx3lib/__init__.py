@@ -26,4 +26,4 @@ except ImportError:  # pragma: no cover
 
 __all__ = ["OutputDir", "Provenance", "Table", "observe", "physics", "run",
            "ovf", "view"]
-__version__ = "0.1.0"
+__version__ = "0.2.1"
