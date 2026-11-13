@@ -64,6 +64,11 @@ budget below the time limit of the shell command that runs it. A script that
 times out is ended together with every process it started, so nothing keeps
 running in the background.
 
+Each script gets its own line: `OK` only if the engine finished it in this
+call, `FAILED` with the engine's complaint, `TIMEOUT` if it was still running
+when the time was up, `NOT RUN` if it never started. Exit code `1` means at
+least one line is not `OK`; read the lines, not only the count.
+
 Both `run` and `batch` print a `WARNING` when a script applies a field
 component above 5 T. mumax3 fields are in tesla (50 mT is `0.05`); a value
 like `B_ext = vector(0, 0, 50)` is almost always mT typed as tesla. Fix the

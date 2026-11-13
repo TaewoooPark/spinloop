@@ -360,7 +360,11 @@ def run_batch(scripts: list, jobs: int = 3, timeout: float | None = 3600,
     With `-j` (mumax3-ultrafast) the inputs go through one `mumax3 -j N`
     invocation, which is where the batch speed-up lives. `-failfast` is
     deliberately NOT passed: in a sweep, one impossible parameter set must not
-    discard the points that did work.
+    discard the points that did work. A script is OK only if the engine
+    finished it in this call and closed its log. One that was still running
+    when the batch time was up is a timeout, one that had not started is
+    NOT RUN, and one the engine gave up on is failed, with the engine's
+    complaint.
 
     Without `-j` (upstream mumax3) the inputs run one after another, each in
     its own process, so that every script gets its own status and duration and
@@ -396,6 +400,8 @@ def run_batch(scripts: list, jobs: int = 3, timeout: float | None = 3600,
         cmd.append("-f")
     cmd += [str(s) for s in scripts]
 
+    logs = {s: default_outdir(s) / "log.txt" for s in scripts}
+    before = {s: _stamp(log) for s, log in logs.items()}
     started = time.time()
     try:
         rc, out, timed_out = _execute(cmd, timeout)
@@ -409,39 +415,103 @@ def run_batch(scripts: list, jobs: int = 3, timeout: float | None = 3600,
         return [RunResult(s, False, "environment", elapsed, None, first.strip())
                 for s in scripts]
 
-    # Judge each script by whether its own output directory came out intact.
+    # Judge each script by its own log. The output directory proves nothing:
+    # the engine creates it, with an empty log.txt, before it reads the first
+    # statement, so a script that failed or was cut off has one too.
     results = []
     for s in scripts:
         dest = default_outdir(s)
-        ok = dest.is_dir() and (dest / "log.txt").is_file()
-        status = "ok" if ok else ("timeout" if timed_out else "failed")
+        began = _stamp(logs[s]) not in (None, before[s])
+        if began and _closed(logs[s]):
+            status, error = "ok", ""
+        elif timed_out and not began:
+            status = "skipped"
+            error = f"batch time {timeout:.0f} s was used up before it started; run it in another call"
+        else:
+            error = _script_error(out, s)
+            if timed_out and not error:
+                status = "timeout"          # still running when the batch was ended
+            else:
+                status = "failed"
+                error = error or (f"the engine did not finish it (batch exited {rc})" if began
+                                  else "no output directory produced")
         results.append(RunResult(
             script=s,
             ok=(status == "ok"),
             status=status,
             duration_s=elapsed,
-            outdir=dest if dest.is_dir() else None,
-            error="" if status == "ok" else _script_error(out, s),
+            outdir=dest if began and dest.is_dir() else None,
+            error=error,
             log_tail=[],
             warnings=field_warnings(s),
         ))
     if rc != 0 and all(r.ok for r in results):
-        # batch reported failure but every directory exists: surface it anyway
+        # batch reported failure but every log is closed: surface it anyway
         for r in results:
             r.error = r.error or f"batch exited {rc}"
     return results
 
 
+# The engine writes this block last, when it closes an output directory. Until
+# then nothing reaches log.txt (the log is buffered), so an engine that was
+# killed, or that stopped on an error, leaves log.txt empty.
+_CLOSED = b"Please cite the following references"
+
+_QUEUE_VERDICT = re.compile(r" (exit status \d+|signal: \S.*)$")
+_QUEUE_TALLY = re.compile(r"^\d+ OK,\s+\d+ failed$")
+_GO_SITE = re.compile(r"^\S+\.go:\d+ +(\S.*)$")
+_GO_STACK = re.compile(r"^(goroutine|created by|\[signal|exit status|\s+|github\.com/|"
+                       r"reflect\.|main\.|runtime\.|os\.|sync\.)")
+
+
+def _stamp(path: Path):
+    """What a file is now, or None: tells a log written in this call from one
+    an earlier call left behind."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size, st.st_ino
+
+
+def _closed(log: Path) -> bool:
+    """Did the engine get to the end of the run that wrote this log?"""
+    try:
+        with open(log, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 8192))
+            return _CLOSED in f.read()
+    except OSError:
+        return False
+
+
 def _script_error(batch_output: str, script: Path) -> str:
-    """Pull the complaint belonging to one script out of a batch log."""
-    name = script.name
+    """What the queue reported for one script that failed, or "" if it reported
+    no failure for it.
+
+    The queue prints `<input> <how the engine ended>` and then everything that
+    engine wrote. The complaint is the last line of that, once the banner, the
+    echo of the script and the Go stack are removed.
+    """
     lines = batch_output.splitlines()
-    for i, l in enumerate(lines):
-        if name in l:
-            for follow in lines[i:i + 6]:
-                if re.search(r"error|panic|failed|invalid|undefined", follow, re.I):
-                    return follow.strip()
-    return "no output directory produced"
+    head = f"{script} "
+    at = next((i for i, l in enumerate(lines)
+               if l.startswith(head) and _QUEUE_VERDICT.search(l)), None)
+    if at is None:
+        return ""
+    said = ""
+    for l in lines[at + 1:]:
+        if l.startswith(f"{MUMAX} [") or _QUEUE_TALLY.match(l) or \
+                (_QUEUE_VERDICT.search(l) and not l.startswith("//")):
+            break                           # the next script, or the end of the queue
+        if not l.strip() or l.startswith("//"):
+            continue
+        site = _GO_SITE.match(l)            # "engine/util.go:91 <what went wrong>"
+        if site:
+            said = site.group(1).strip()
+        elif not _GO_STACK.match(l):
+            said = l.strip()
+    return said or lines[at][len(head):].strip()
 
 
 # ---------------------------------------------------------------------------
